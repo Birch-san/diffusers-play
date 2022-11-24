@@ -3,7 +3,7 @@ import os
 # monkey-patch _randn to use CPU random before k-diffusion uses it
 from helpers.brownian_tree_mps_fix import reassuring_message
 from helpers.device import DeviceLiteral, get_device_type
-from helpers.diffusers_denoiser import DiffusersSDDenoiser
+from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.cfg_denoiser import CFGDenoiser
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
@@ -18,8 +18,8 @@ from helpers.log_level import log_level
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
+from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
 
-from transformers import CLIPTextModel, PreTrainedTokenizer, CLIPTokenizer, logging
 from typing import List
 from PIL import Image
 import time
@@ -43,9 +43,11 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  # 'hakurei/waifu-diffusion'
   # 'runwayml/stable-diffusion-v1-5'
+  'stabilityai/stable-diffusion-2'
 )
+is_sd2 = model_name == 'stabilityai/stable-diffusion-2'
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
@@ -54,8 +56,8 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 ).to(device).eval()
 
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=unet.dtype)
-unet_k_wrapped = DiffusersSDDenoiser(unet, alphas_cumprod)
-denoiser = CFGDenoiser(unet_k_wrapped)
+unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod) if is_sd2 else DiffusersSDDenoiser(unet, alphas_cumprod)
+denoiser = CFGDenoiser(unet_k_wrapped, one_at_a_time=True)
 
 # vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
@@ -66,11 +68,18 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
 ).to(device).eval()
 latents_to_pils: LatentsToPils = make_latents_to_pils(vae)
 
-tokenizer: PreTrainedTokenizer = CLIPTokenizer.from_pretrained('openai/clip-vit-large-patch14')
-with log_level(logging.ERROR):
-  text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained('openai/clip-vit-large-patch14', torch_dtype=torch_dtype).to(device)
+clip_impl = ClipImplementation.HF
+clip_ckpt = ClipCheckpoint.LAION if is_sd2 else ClipCheckpoint.OpenAI
+clip_subtract_hidden_state_layers = 1 if is_sd2 else 0
+embed: Embed = get_embedder(
+  impl=clip_impl,
+  ckpt=clip_ckpt,
+  subtract_hidden_state_layers=clip_subtract_hidden_state_layers,
+  device=device,
+  torch_dtype=torch_dtype
+)
 
-schedule_template = KarrasScheduleTemplate.Prototyping
+schedule_template = KarrasScheduleTemplate.Searching
 schedule: KarrasScheduleParams = get_template_schedule(schedule_template, unet_k_wrapped)
 
 steps, sigma_max, sigma_min, rho = schedule.steps, schedule.sigma_max, schedule.sigma_min, schedule.rho
@@ -82,7 +91,8 @@ sigmas: Tensor = get_sigmas_karras(
   device=device,
 ).to(unet.dtype)
 
-prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
+prompt='Emad Mostaque high-fiving Gordon Ramsay'
+# prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
 # prompt = "masterpiece character portrait of a blonde girl, full resolution, 4k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination, vaporwave"
 
 unprompts = [''] if cfg_enabled else []
@@ -97,13 +107,11 @@ log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 cond_scale = 7.5 if cfg_enabled else 1.
 batch_size = 1
 num_images_per_prompt = 1
-width = 512
+width = 768 if is_sd2 else 512
 height = width
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
-  tokens = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt")
-  text_input_ids: Tensor = tokens.input_ids
-  text_embeddings: Tensor = text_encoder(text_input_ids.to(device))[0]
+  text_embeddings: Tensor = embed(prompts)
   chunked = text_embeddings.chunk(text_embeddings.size(0))
   if cfg_enabled:
     uc, c = chunked
