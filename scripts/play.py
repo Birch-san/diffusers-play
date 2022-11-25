@@ -14,7 +14,6 @@ from torch import Generator, Tensor, randn, no_grad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
-from helpers.log_level import log_level
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
@@ -57,7 +56,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=unet.dtype)
 unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod) if is_sd2 else DiffusersSDDenoiser(unet, alphas_cumprod)
-denoiser = CFGDenoiser(unet_k_wrapped, one_at_a_time=True)
+denoiser = CFGDenoiser(unet_k_wrapped)
 
 # vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
@@ -79,7 +78,7 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.Searching
+schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(schedule_template, unet_k_wrapped)
 
 steps, sigma_max, sigma_min, rho = schedule.steps, schedule.sigma_max, schedule.sigma_min, schedule.rho
