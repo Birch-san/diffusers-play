@@ -7,9 +7,10 @@ def get_betas(
   num_train_timesteps: int = 1000,
   beta_start: float = 0.00085,
   beta_end: float = 0.012,
-  device: Optional[DeviceType] = None
+  device: Optional[DeviceType] = None,
+  dtype: torch.dtype = torch.float32,
 ) -> Tensor:
-  return linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32, device=device) ** 2
+  return linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=dtype, device=device) ** 2
 
 def get_alphas(betas: Tensor) -> Tensor:
   return 1.0 - betas

@@ -23,12 +23,12 @@ from typing import List
 from PIL import Image
 import time
 
-half = False
+half = True
 cfg_enabled = True
 
 n_rand_seeds = 0
 seeds = [
-  2178792735,
+  2178792736,
   *[get_seed() for _ in range(n_rand_seeds)]
 ]
 
@@ -42,9 +42,9 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  'hakurei/waifu-diffusion'
   # 'runwayml/stable-diffusion-v1-5'
-  'stabilityai/stable-diffusion-2'
+  # 'stabilityai/stable-diffusion-2'
 )
 is_sd2 = model_name == 'stabilityai/stable-diffusion-2'
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
@@ -54,16 +54,32 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
 ).to(device).eval()
 
-alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=unet.dtype)
-unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod) if is_sd2 else DiffusersSDDenoiser(unet, alphas_cumprod)
+# sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
+sampling_dtype: torch.dtype = torch.float32
+# sampling_dtype: torch.dtype = torch_dtype
+alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=sampling_dtype)
+unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if is_sd2 else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
 denoiser = CFGDenoiser(unet_k_wrapped)
 
 # vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
+vae_dtype = torch_dtype
+if model_name == 'hakurei/waifu-diffusion':
+  # hlky kindly exported the WD1.4 VAE checkpoint to a diffusers diffusion_pytorch_model.bin for me
+  # https://huggingface.co/hakurei/waifu-diffusion-v1-4/blob/main/vae/kl-f8-anime.ckpt
+  vae_model_name = '/Users/birch/machine-learning/waifu-diffusion-v1-4'
+  vae_revision = None
+else:
+  vae_model_name = model_name
+  vae_revision = revision
+# you can make VAE 32-bit but it looks the same to me and would be slightly slower + more disk space
+# vae_dtype: torch.dtype = torch.float32
+# vae_revision=None
+
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
-  model_name,
+  vae_model_name,
   subfolder='vae',
-  revision=revision,
-  torch_dtype=torch_dtype,
+  revision=vae_revision,
+  torch_dtype=vae_dtype,
 ).to(device).eval()
 latents_to_pils: LatentsToPils = make_latents_to_pils(vae)
 
@@ -90,8 +106,8 @@ sigmas: Tensor = get_sigmas_karras(
   device=device,
 ).to(unet.dtype)
 
-prompt='Emad Mostaque high-fiving Gordon Ramsay'
-# prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
+# prompt='Emad Mostaque high-fiving Gordon Ramsay'
+prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
 # prompt = "masterpiece character portrait of a blonde girl, full resolution, 4k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination, vaporwave"
 
 unprompts = [''] if cfg_enabled else []
@@ -145,7 +161,7 @@ with no_grad():
       extra_args=extra_args,
       # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
       # callback=log_intermediates,
-    )
+    ).to(vae_dtype)
     pil_images: List[Image.Image] = latents_to_pils(latents)
     print(f'generated {batch_size} images in {time.perf_counter()-tic} seconds')
 
