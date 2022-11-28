@@ -5,4 +5,4 @@ uint32_iinfo = np.iinfo(np.uint32)
 min, max = uint32_iinfo.min, uint32_iinfo.max
 
 def get_seed() -> int:
-  randint(uint32_iinfo.min, uint32_iinfo.max)
+  return randint(uint32_iinfo.min, uint32_iinfo.max)
