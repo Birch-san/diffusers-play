@@ -42,11 +42,14 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  # 'hakurei/waifu-diffusion'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
+  'stabilityai/stable-diffusion-2-base'
 )
-is_sd2 = model_name == 'stabilityai/stable-diffusion-2'
+is_768 = model_name == 'stabilityai/stable-diffusion-2'
+needs_vparam = model_name == 'stabilityai/stable-diffusion-2'
+is_sd2 = model_name == 'stabilityai/stable-diffusion-2' or model_name == 'stabilityai/stable-diffusion-2-base'
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
@@ -58,7 +61,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 sampling_dtype: torch.dtype = torch.float32
 # sampling_dtype: torch.dtype = torch_dtype
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=sampling_dtype)
-unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if is_sd2 else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
+unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
 denoiser = CFGDenoiser(unet_k_wrapped)
 
 # vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
@@ -122,7 +125,7 @@ log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 cond_scale = 7.5 if cfg_enabled else 1.
 batch_size = 1
 num_images_per_prompt = 1
-width = 768 if is_sd2 else 512
+width = 768 if is_768 else 512
 height = width
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
