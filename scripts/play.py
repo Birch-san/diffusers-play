@@ -10,7 +10,7 @@ from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_
 print(reassuring_message) # avoid "unused" import :P
 
 import torch
-from torch import Generator, Tensor, randn, no_grad
+from torch import Generator, Tensor, randn, no_grad, argmin, zeros
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
@@ -108,6 +108,11 @@ sigmas: Tensor = get_sigmas_karras(
   rho=rho,
   device=device,
 ).to(unet.dtype)
+sigmas_quantized = torch.cat([
+  unet_k_wrapped.sigmas[argmin((sigmas[:-1].unsqueeze(1).expand(-1, unet_k_wrapped.sigmas.size(0)) - unet_k_wrapped.sigmas).abs(), dim=1)],
+  zeros((1), device=sigmas.device, dtype=sigmas.dtype)
+])
+print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
 
 # prompt='Emad Mostaque high-fiving Gordon Ramsay'
 prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
