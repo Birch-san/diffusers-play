@@ -154,11 +154,16 @@ latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height //
 with no_grad():
   embedding_and_mask: EmbeddingAndMask = embed(prompts)
   text_embeddings, mask = embedding_and_mask
+  embed_chunked = text_embeddings.chunk(text_embeddings.size(0))
+  mask_chunked = mask.chunk(mask.size(0))
   if cfg_enabled:
-    uc, c = chunked
+    uc, c = embed_chunked
+    uc_mask, c_mask = mask_chunked
   else:
     uc = None
-    c, = chunked
+    c, = embed_chunked
+    uc_mask = None
+    c_mask, = mask_chunked
 
   batch_tic = time.perf_counter()
   for seed in seeds:
