@@ -17,7 +17,7 @@ from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sa
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
-from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
+from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, EmbeddingAndMask, get_embedder
 
 from typing import List
 from PIL import Image
@@ -152,8 +152,8 @@ width = 768 if is_768 else 512
 height = width
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
-  text_embeddings: Tensor = embed(prompts)
-  chunked = text_embeddings.chunk(text_embeddings.size(0))
+  embedding_and_mask: EmbeddingAndMask = embed(prompts)
+  text_embeddings, mask = embedding_and_mask
   if cfg_enabled:
     uc, c = chunked
   else:

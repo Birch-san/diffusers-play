@@ -1,13 +1,10 @@
 import torch
-from typing import Callable, Union, Iterable
+from typing import Callable, Union, Iterable, NamedTuple
 from typing_extensions import TypeAlias
-from torch import Tensor, LongTensor, no_grad
+from torch import Tensor, FloatTensor, LongTensor, no_grad, zeros
 from enum import Enum, auto
 from .log_level import log_level
 from .device import DeviceType
-
-Prompts: TypeAlias = Union[str, Iterable[str]]
-Embed: TypeAlias = Callable[[Prompts], Tensor]
 
 class ClipImplementation(Enum):
   HF = auto()
@@ -17,6 +14,13 @@ class ClipImplementation(Enum):
 class ClipCheckpoint(Enum):
   OpenAI = auto()
   LAION = auto()
+
+class EmbeddingAndMask(NamedTuple):
+  embedding: FloatTensor
+  mask: LongTensor
+
+Prompts: TypeAlias = Union[str, Iterable[str]]
+Embed: TypeAlias = Callable[[Prompts], EmbeddingAndMask]
 
 def get_embedder(
   impl: ClipImplementation,
@@ -46,19 +50,20 @@ def get_embedder(
       with log_level(logging.ERROR):
         text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, **encoder_extra_args).to(device).eval()
       
-      def embed(prompts: Prompts) -> Tensor:
-        tokens: BatchEncoding = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt")
-        text_input_ids: Tensor = tokens.input_ids
+      def embed(prompts: Prompts) -> EmbeddingAndMask:
+        tokens: BatchEncoding = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt", return_attention_mask=True)
+        text_input_ids: Tensor = tokens.input_ids.to(device)
+        attention_mask: Tensor = tokens.attention_mask.to(device)
         with no_grad():
           encoder_outputs: BaseModelOutputWithPooling = text_encoder.forward(
-            text_input_ids.to(device),
+            text_input_ids,
             output_hidden_states=subtract_hidden_state_layers != 0,
             return_dict=True
           )
           text_embeddings: Tensor = encoder_outputs.last_hidden_state if subtract_hidden_state_layers == 0 else (
             text_encoder.text_model.final_layer_norm.forward(encoder_outputs.hidden_states[-1 - subtract_hidden_state_layers])
           )
-        return text_embeddings
+        return text_embeddings, attention_mask
       return embed
     case ClipImplementation.OpenCLIP:
       # this doesn't seem to get same result as HF implementation, but it does give a result that matches the prompt. maybe I goofed somewhere.
@@ -66,6 +71,7 @@ def get_embedder(
       # https://github.com/Stability-AI/stablediffusion/blob/a436738fc31da2def74dad426a02cdc9b6f009d0/ldm/modules/encoders/modules.py#L147
       import open_clip
       from open_clip import CLIP as OpenCLIP, tokenize
+      from open_clip.tokenizer import _tokenizer
       match(ckpt):
         case ClipCheckpoint.OpenAI:
           model_name = 'ViT-L-14'
@@ -77,6 +83,24 @@ def get_embedder(
           raise "never heard of '{ckpt}' ClipCheckpoint."
       encoder, _, _ = open_clip.create_model_and_transforms(model_name, device=device, pretrained=pretrained)
       encoder: OpenCLIP = encoder.eval()
+      context_length = 77
+      def make_attention_mask(prompts: Prompts) -> LongTensor:
+        pad_to_context_len = lambda t: t if t.size(0) == context_length else torch.cat([t, zeros((context_length-t.size(0)), dtype=torch.long, device=device)])
+        return torch.stack([
+          pad_to_context_len(
+            torch.ones(
+              (
+                min(
+                  len(_tokenizer.encode(p))+2,
+                  context_length
+                )
+              ),
+              dtype=torch.long,
+              device=device
+            )
+          ) for p in prompts
+        ])
+        
       def text_transformer_forward(x: Tensor, attn_mask = None) -> Tensor:
         for r in encoder.transformer.resblocks[:len(encoder.transformer.resblocks) - subtract_hidden_state_layers]:
           x = r(x, attn_mask=attn_mask)
@@ -88,12 +112,13 @@ def get_embedder(
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = encoder.ln_final(x)
         return x
-      def embed(prompts: Prompts) -> Tensor:
+      def embed(prompts: Prompts) -> EmbeddingAndMask:
+        mask: LongTensor = make_attention_mask(prompts)
         tokens: LongTensor = tokenize(prompts).to(device)
         with no_grad():
           text_embeddings: Tensor = encoder.token_embedding(tokens)
           text_embeddings: Tensor = postprocess(text_embeddings)
-        return text_embeddings
+        return text_embeddings, mask
       return embed
     case _:
       raise f"never heard of a '{impl}' ClipImplementation."
