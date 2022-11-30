@@ -10,8 +10,9 @@ from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_
 print(reassuring_message) # avoid "unused" import :P
 
 import torch
-from torch import Generator, Tensor, randn, no_grad, argmin, zeros
+from torch import Generator, Tensor, nn, randn, no_grad, argmin, zeros
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
+from diffusers.models.attention import AttentionBlock, CrossAttention
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
@@ -57,6 +58,12 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
 ).to(device).eval()
 
+def visit_unet_modules(module: nn.Module) -> None:
+  for m in module.children():
+    if isinstance(m, CrossAttention):
+      m.fuse_qk_scaling()
+unet.apply(visit_unet_modules)
+
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
 # sampling_dtype: torch.dtype = torch_dtype
@@ -84,6 +91,15 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
   revision=vae_revision,
   torch_dtype=vae_dtype,
 ).to(device).eval()
+
+# note: fusing QK in the VAE results in a slight visual difference. at least in float32.
+def visit_vae_modules(module: nn.Module) -> None:
+  for m in module.children():
+    if isinstance(m, AttentionBlock):
+      # spreading the multiply across both projections seems to result in a smaller change.
+      m.fuse_qk_scaling(spread_across_qk=True)
+vae.apply(visit_vae_modules)
+
 latents_to_pils: LatentsToPils = make_latents_to_pils(vae)
 
 clip_impl = ClipImplementation.HF
