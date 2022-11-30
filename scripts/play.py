@@ -175,7 +175,9 @@ with no_grad():
     extra_args = {
       'cond': c,
       'uncond': uc,
-      'cond_scale': cond_scale
+      'cond_scale': cond_scale,
+      'uncond_mask': uc_mask,
+      'cond_mask': c_mask,
     }
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
