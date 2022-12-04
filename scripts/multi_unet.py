@@ -4,7 +4,7 @@ import time
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
-from helpers.multi_unet_denoiser import MultiUnetCFGDenoiser
+from helpers.multi_unet_denoiser import MultiUnetCFGDenoiser, GetModelWeight, static_model_weight
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
 from helpers.get_seed import get_seed
@@ -177,16 +177,22 @@ prompts: Dict[ModelId, str] = {
   # nevermind it was trained on romaji
   # ModelId.JPSD: 'fushimi inari taisha no irasuto, copic de tsukutta',
   # ModelId.WD: 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
-  ModelId.WD: 'carnelian, general content, still life, ribbon, watercolor (medium), traditional media',
+  ModelId.WD: 'carnelian, general content, still life, watercolor (medium), traditional media',
   ModelId.SD2_BASE: 'an adorable teddy bear sitting on a bed. twilight. high quality. fluffy, wool.',
   # ModelId.SD2: 'an adorable teddy bear sitting on a bed. twilight. high quality. fluffy, wool.',
 }
-equal_weight: float = 1./len(models)
-model_weights: Dict[ModelId, float] = {
-  # ModelId.JPSD: equal_weight,
-  ModelId.WD: 0.6,
-  ModelId.SD2_BASE: 0.4,
-  # ModelId.SD2: equal_weight,
+# equal_weight: float = 1./len(models)
+# static_weight_getter: GetModelWeight = static_model_weight(equal_weight)
+
+# initially (high-sigma denoising): only SD2 is used, and carves out the composition for the bear.
+# once model starts denoising medium sigmas (below 2): we introduce waifu-diffusion with 60% weighting,
+# to influence the fine details towards a watercolour style
+cutoff: float = 2.
+model_weights: Dict[ModelId, GetModelWeight] = {
+  # ModelId.JPSD: static_weight_getter,
+  ModelId.WD: lambda sigma: 0.6 if sigma < cutoff else 0.,
+  ModelId.SD2_BASE: lambda sigma: 0.4 if sigma < cutoff else 1.
+  # ModelId.SD2: static_weight_getter,
 }
 
 sample_path='out'

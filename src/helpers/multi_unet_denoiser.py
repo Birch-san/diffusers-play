@@ -2,8 +2,16 @@ from .diffusers_denoiser import DiffusersSDDenoiser
 
 from torch import Tensor, cat
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Protocol
 from unittest import TestCase
+
+class GetModelWeight(Protocol):
+  def __call__(sigma: float) -> float: ...
+
+def static_model_weight(weight: float) -> GetModelWeight:
+  def get_model_weight(sigma: float) -> float:
+    return weight
+  return get_model_weight
 
 class MultiUnetCFGDenoiser():
   denoisers: Dict[str, DiffusersSDDenoiser]
@@ -16,7 +24,7 @@ class MultiUnetCFGDenoiser():
     sigma: Tensor,
     unconds: Dict[str, Tensor],
     conds: Dict[str, Tensor],
-    model_weights: Dict[str, float],
+    model_weights: Dict[str, GetModelWeight],
     cond_scale: float
   ) -> Tensor:
     assert cond_scale > 1.0, "non-CFG fastpath not implemented. doable but everybody loves CFG"
@@ -30,17 +38,21 @@ class MultiUnetCFGDenoiser():
     assert all(batch_size_ == batch_size for batch_size_ in batch_sizes)
 
     x_in: Tensor = x.expand(batch_size + 1, -1, -1, -1)
+    sigma_fl: float = sigma.item()
     
     # yes I know about reduce()
     # but multi-line lambda expressions would make that easier
     accumulated: Optional[Tensor] = None
     for id, denoiser in self.denoisers.items():
+      get_model_weight: GetModelWeight = model_weights[id]
+      model_weight: float = get_model_weight(sigma_fl)
+      if model_weight == 0.:
+        continue
       uncond: Tensor = unconds[id]
       cond: Tensor = conds[id]
       cond_in: Tensor = cat([uncond, cond])
       denoised: Tensor = denoiser(input=x_in, sigma=sigma, encoder_hidden_states=cond_in)
       uncond, cond = denoised.chunk(cond_in.size(dim=0))
-      model_weight: float = model_weights[id]
       contribution: Tensor = (uncond + (cond - uncond) * cond_scale) * model_weight
       accumulated = contribution if accumulated is None else accumulated + contribution
       # it's possible to accumulate in a more functional / parallel way
