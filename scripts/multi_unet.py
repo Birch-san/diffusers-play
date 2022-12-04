@@ -2,7 +2,7 @@ import os
 import time
 
 from helpers.device import DeviceLiteral, get_device_type
-from helpers.diffusers_denoiser import DiffusersSDDenoiser
+from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.multi_unet_denoiser import MultiUnetCFGDenoiser
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
@@ -52,10 +52,13 @@ class ModelSpec:
   revision: Optional[str]
   torch_dtype: Optional[torch.dtype]
   encoder: TextEncoderSpec
+  needs_vparam: bool
 
 class ModelId(Enum):
   JPSD = auto()
   WD = auto()
+  SD2_BASE = auto()
+  SD2 = auto()
 
 unet_revision: Optional[str] = 'fp16' if unet_dtype == torch.float16 else None
 
@@ -64,22 +67,45 @@ encoder = TextEncoderSpec(
   clip_ckpt=ClipCheckpoint.OpenAI,
   subtract_hidden_state_layers=0
 )
+sd2_encoder = TextEncoderSpec(
+  clip_impl=ClipImplementation.HF,
+  clip_ckpt=ClipCheckpoint.LAION,
+  subtract_hidden_state_layers=1
+)
 jpsd = ModelSpec(
   name='rinna/japanese-stable-diffusion',
   revision=unet_revision,
   torch_dtype=unet_dtype,
   encoder=encoder,
+  needs_vparam=False,
 )
 wd = ModelSpec(
   name='hakurei/waifu-diffusion',
   revision=unet_revision,
   torch_dtype=unet_dtype,
   encoder=encoder,
+  needs_vparam=False,
+)
+sd2_base = ModelSpec(
+  name='stabilityai/stable-diffusion-2-base',
+  revision=unet_revision,
+  torch_dtype=unet_dtype,
+  encoder=sd2_encoder,
+  needs_vparam=False,
+)
+sd2 = ModelSpec(
+  name='stabilityai/stable-diffusion-2',
+  revision=unet_revision,
+  torch_dtype=unet_dtype,
+  encoder=sd2_encoder,
+  needs_vparam=True,
 )
 
 models: Dict[ModelId, ModelSpec] = {
-  ModelId.JPSD: jpsd,
+  # ModelId.JPSD: jpsd,
   ModelId.WD: wd,
+  ModelId.SD2_BASE: sd2_base,
+  # ModelId.SD2: sd2,
 }
 
 # if you have limited VRAM then you might not want to transfer these to GPU eagerly.
@@ -96,7 +122,15 @@ unets: Dict[ModelId, UNet2DConditionModel] = {
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=sampling_dtype)
 
 denoisers: Dict[ModelId, DiffusersSDDenoiser] = {
-  id: DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype) for id, unet in unets.items()
+  id: DiffusersSD2Denoiser(
+    unet,
+    alphas_cumprod,
+    sampling_dtype
+  ) if models[id].needs_vparam else DiffusersSDDenoiser(
+    unet,
+    alphas_cumprod,
+    sampling_dtype
+  ) for id, unet in unets.items()
 }
 
 denoiser = MultiUnetCFGDenoiser(denoisers)
@@ -141,13 +175,18 @@ sigmas: Tensor = get_sigmas_karras(
 prompts: Dict[ModelId, str] = {
   # ModelId.JPSD: '伏見稲荷大社のイラスト、copicで作った。',
   # nevermind it was trained on romaji
-  ModelId.JPSD: 'fushimi inari taisha no irasuto, copic de tsukutta',
-  ModelId.WD: 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
+  # ModelId.JPSD: 'fushimi inari taisha no irasuto, copic de tsukutta',
+  # ModelId.WD: 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
+  ModelId.WD: 'carnelian, general content, still life, ribbon, watercolor (medium), traditional media',
+  ModelId.SD2_BASE: 'an adorable teddy bear sitting on a bed. twilight. high quality. fluffy, wool.',
+  # ModelId.SD2: 'an adorable teddy bear sitting on a bed. twilight. high quality. fluffy, wool.',
 }
 equal_weight: float = 1./len(models)
 model_weights: Dict[ModelId, float] = {
-  ModelId.JPSD: equal_weight,
-  ModelId.WD: equal_weight,
+  # ModelId.JPSD: equal_weight,
+  ModelId.WD: 0.6,
+  ModelId.SD2_BASE: 0.4,
+  # ModelId.SD2: equal_weight,
 }
 
 sample_path='out'
