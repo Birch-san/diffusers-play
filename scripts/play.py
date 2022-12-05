@@ -107,7 +107,7 @@ sigmas: Tensor = get_sigmas_karras(
   sigma_min=sigma_min,
   rho=rho,
   device=device,
-).to(unet.dtype)
+).to(sampling_dtype)
 sigmas_quantized = torch.cat([
   unet_k_wrapped.sigmas[argmin((sigmas[:-1].unsqueeze(1).expand(-1, unet_k_wrapped.sigmas.size(0)) - unet_k_wrapped.sigmas).abs(), dim=1)],
   zeros((1), device=sigmas.device, dtype=sigmas.dtype)
@@ -145,7 +145,7 @@ with no_grad():
   batch_tic = time.perf_counter()
   for seed in seeds:
     generator = Generator(device='cpu').manual_seed(seed)
-    latents = randn(latents_shape, generator=generator, device='cpu', dtype=torch_dtype).to(device)
+    latents = randn(latents_shape, generator=generator, device='cpu', dtype=sampling_dtype).to(device)
 
     tic = time.perf_counter()
 
