@@ -1,7 +1,7 @@
 import torch
 from typing import Callable, Union, Iterable, NamedTuple
 from typing_extensions import TypeAlias
-from torch import Tensor, FloatTensor, LongTensor, no_grad, zeros
+from torch import Tensor, FloatTensor, LongTensor, BoolTensor, no_grad, zeros
 from enum import Enum, auto
 from .log_level import log_level
 from .device import DeviceType
@@ -17,7 +17,7 @@ class ClipCheckpoint(Enum):
 
 class EmbeddingAndMask(NamedTuple):
   embedding: FloatTensor
-  mask: LongTensor
+  mask: BoolTensor
 
 Prompts: TypeAlias = Union[str, Iterable[str]]
 Embed: TypeAlias = Callable[[Prompts], EmbeddingAndMask]
@@ -53,7 +53,7 @@ def get_embedder(
       def embed(prompts: Prompts) -> EmbeddingAndMask:
         tokens: BatchEncoding = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt", return_attention_mask=True)
         text_input_ids: Tensor = tokens.input_ids.to(device)
-        attention_mask: Tensor = tokens.attention_mask.to(device)
+        attention_mask: BoolTensor = tokens.attention_mask.to(device, dtype=torch.bool)
         with no_grad():
           encoder_outputs: BaseModelOutputWithPooling = text_encoder.forward(
             text_input_ids,
@@ -84,7 +84,7 @@ def get_embedder(
       encoder, _, _ = open_clip.create_model_and_transforms(model_name, device=device, pretrained=pretrained)
       encoder: OpenCLIP = encoder.eval()
       context_length = 77
-      def make_attention_mask(prompts: Prompts) -> LongTensor:
+      def make_attention_mask(prompts: Prompts) -> BoolTensor:
         keep_count = torch.tensor(
           [
             min(
@@ -96,11 +96,7 @@ def get_embedder(
           device=device,
         )
         token_ix = torch.arange(0, context_length, dtype=torch.long, device=device)
-        return torch.where(
-          token_ix.expand(2, -1) < keep_count.unsqueeze(0).transpose(0, 1),
-          1,
-          0
-        )
+        return token_ix.expand(2, -1) < keep_count.unsqueeze(0).transpose(0, 1)
         
       def text_transformer_forward(x: Tensor, attn_mask = None) -> Tensor:
         for r in encoder.transformer.resblocks[:len(encoder.transformer.resblocks) - subtract_hidden_state_layers]:
@@ -114,7 +110,7 @@ def get_embedder(
         x = encoder.ln_final(x)
         return x
       def embed(prompts: Prompts) -> EmbeddingAndMask:
-        mask: LongTensor = make_attention_mask(prompts)
+        mask: BoolTensor = make_attention_mask(prompts)
         tokens: LongTensor = tokenize(prompts).to(device)
         with no_grad():
           text_embeddings: Tensor = encoder.token_embedding(tokens)
