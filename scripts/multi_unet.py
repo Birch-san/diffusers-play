@@ -14,7 +14,7 @@ from k_diffusion.external import DiscreteSchedule
 from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m
 
 import torch
-from torch import Generator, Tensor, randn, no_grad
+from torch import Generator, Tensor, randn, no_grad, argmin, zeros
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 
 from dataclasses import dataclass
@@ -171,6 +171,11 @@ sigmas: Tensor = get_sigmas_karras(
   rho=rho,
   device=device,
 ).to(unet_dtype)
+sigmas_quantized = torch.cat([
+  unet_k_wrapped.sigmas[argmin((sigmas[:-1].unsqueeze(1).expand(-1, unet_k_wrapped.sigmas.size(0)) - unet_k_wrapped.sigmas).abs(), dim=1)],
+  zeros((1), device=sigmas.device, dtype=sigmas.dtype)
+])
+print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
 
 prompts: Dict[ModelId, str] = {
   # ModelId.JPSD: '伏見稲荷大社のイラスト、copicで作った。',
