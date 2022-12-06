@@ -85,21 +85,22 @@ def get_embedder(
       encoder: OpenCLIP = encoder.eval()
       context_length = 77
       def make_attention_mask(prompts: Prompts) -> LongTensor:
-        pad_to_context_len = lambda t: t if t.size(0) == context_length else torch.cat([t, zeros((context_length-t.size(0)), dtype=torch.long, device=device)])
-        return torch.stack([
-          pad_to_context_len(
-            torch.ones(
-              (
-                min(
-                  len(_tokenizer.encode(p))+2,
-                  context_length
-                )
-              ),
-              dtype=torch.long,
-              device=device
-            )
-          ) for p in prompts
-        ])
+        keep_count = torch.tensor(
+          [
+            min(
+              len(_tokenizer.encode(p)) + 2,
+              context_length
+            ) for p in prompts
+          ],
+          dtype=torch.long,
+          device=device,
+        )
+        token_ix = torch.arange(0, context_length, dtype=torch.long, device=device)
+        return torch.where(
+          token_ix.expand(2, -1) < keep_count.unsqueeze(0).transpose(0, 1),
+          1,
+          0
+        )
         
       def text_transformer_forward(x: Tensor, attn_mask = None) -> Tensor:
         for r in encoder.transformer.resblocks[:len(encoder.transformer.resblocks) - subtract_hidden_state_layers]:
