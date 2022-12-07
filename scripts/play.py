@@ -45,11 +45,23 @@ model_name = (
   # 'hakurei/waifu-diffusion'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
+  # 'stabilityai/stable-diffusion-2-1'
   'stabilityai/stable-diffusion-2-base'
 )
-is_768 = model_name == 'stabilityai/stable-diffusion-2'
-needs_vparam = model_name == 'stabilityai/stable-diffusion-2'
-is_sd2 = model_name == 'stabilityai/stable-diffusion-2' or model_name == 'stabilityai/stable-diffusion-2-base'
+
+sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
+sd2_models = { *sd2_768_models, 'stabilityai/stable-diffusion-2-base' }
+
+laion_embed_models = { *sd2_models }
+_768_models = { *sd2_768_models }
+vparam_models = { *sd2_768_models }
+penultimate_clip_hidden_state_models = { *sd2_models }
+
+needs_laion_embed = model_name in laion_embed_models
+is_768 = model_name in _768_models
+needs_vparam = model_name in vparam_models
+needs_penultimate_clip_hidden_state = model_name in penultimate_clip_hidden_state_models
+
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
@@ -87,8 +99,8 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
 latents_to_pils: LatentsToPils = make_latents_to_pils(vae)
 
 clip_impl = ClipImplementation.HF
-clip_ckpt = ClipCheckpoint.LAION if is_sd2 else ClipCheckpoint.OpenAI
-clip_subtract_hidden_state_layers = 1 if is_sd2 else 0
+clip_ckpt = ClipCheckpoint.LAION if needs_laion_embed else ClipCheckpoint.OpenAI
+clip_subtract_hidden_state_layers = 1 if needs_penultimate_clip_hidden_state else 0
 embed: Embed = get_embedder(
   impl=clip_impl,
   ckpt=clip_ckpt,
