@@ -50,14 +50,11 @@ model_name = (
   'stabilityai/stable-diffusion-2-1-base'
 )
 
-if model_name == 'stabilityai/stable-diffusion-2-1':
-  # found that SD2.1's UNet returned NaN latents when using 16-bit weights + 16-bit computation.
-  # prefer 32-bit computation, even if your weights are 16-bit.
-  torch_dtype=torch.float32
-
 sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
 sd2_base_models = { 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
 sd2_models = { *sd2_768_models, *sd2_base_models }
+# models where if you use 16-bit computation in the Unet: you will get NaN latents. prefer to run attention in 32-bit
+upcast_attention_models = { 'stabilityai/stable-diffusion-2-1' }
 
 laion_embed_models = { *sd2_models }
 _768_models = { *sd2_768_models }
@@ -68,12 +65,14 @@ needs_laion_embed = model_name in laion_embed_models
 is_768 = model_name in _768_models
 needs_vparam = model_name in vparam_models
 needs_penultimate_clip_hidden_state = model_name in penultimate_clip_hidden_state_models
+upcast_attention = torch_dtype is torch.float16 and model_name in upcast_attention_models
 
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
   revision=revision,
   torch_dtype=torch_dtype,
+  upcast_attention=upcast_attention,
 ).to(device).eval()
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
