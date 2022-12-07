@@ -46,11 +46,18 @@ model_name = (
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
-  'stabilityai/stable-diffusion-2-base'
+  # 'stabilityai/stable-diffusion-2-base'
+  'stabilityai/stable-diffusion-2-1-base'
 )
 
+if model_name == 'stabilityai/stable-diffusion-2-1':
+  # found that SD2.1's UNet returned NaN latents when using 16-bit weights + 16-bit computation.
+  # prefer 32-bit computation, even if your weights are 16-bit.
+  torch_dtype=torch.float32
+
 sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
-sd2_models = { *sd2_768_models, 'stabilityai/stable-diffusion-2-base' }
+sd2_base_models = { 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
+sd2_models = { *sd2_768_models, *sd2_base_models }
 
 laion_embed_models = { *sd2_models }
 _768_models = { *sd2_768_models }
