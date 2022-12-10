@@ -1,6 +1,6 @@
 import torch
 from typing import List, Protocol
-from torch import LongTensor
+from torch import LongTensor, tensor
 from .device import DeviceType
 from .clip_identifiers import ClipImplementation, ClipCheckpoint
 from .prompt_type import Prompts
@@ -35,8 +35,17 @@ def get_token_counter(
       from transformers.utils.generic import PaddingStrategy
       tokenizer: PreTrainedTokenizer = get_hf_tokenizer(ckpt=ckpt)
       def tokenize(prompts: Prompts, device: DeviceType=torch.device('cpu')) -> LongTensor:
-        tokens: BatchEncoding = tokenizer(prompts, truncation=False, padding=PaddingStrategy.DO_NOT_PAD, max_length=None, add_special_tokens=False, return_tensors="pt", return_length=True)
-        token_counts: LongTensor = tokens.length.to(device).reshape(-1, 1)
+        tokens: BatchEncoding = tokenizer(
+          prompts,
+          truncation=True,
+          padding=PaddingStrategy.DO_NOT_PAD,
+          max_length=None,
+          add_special_tokens=True,
+          return_attention_mask=False,
+          return_tensors=None,
+          return_length=True
+        )
+        token_counts: LongTensor = tensor(tokens.length, dtype=torch.long, device=device)-2
         return token_counts
       return tokenize
     case ClipImplementation.OpenCLIP:
@@ -46,7 +55,12 @@ def get_token_counter(
           prompts: List[str] = [prompts]
         tokens: List[List[int]] = _tokenizer.encode(prompts)
         token_counts: List[int] = [len(tokens_) for tokens_ in tokens]
-        return torch.tensor(token_counts, dtype=torch.long, device=device).reshape(-1, 1)
+        context_length = 77
+        special_token_count = 2
+        max_nonspecial_tokens = context_length-special_token_count
+        return torch.tensor(token_counts, dtype=torch.long, device=device).minimum(
+          tensor(max_nonspecial_tokens, dtype=torch.long, device=device)
+        )
       return count_tokens
     case _:
       raise f"never heard of a '{impl}' ClipImplementation."
