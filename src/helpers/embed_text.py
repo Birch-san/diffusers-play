@@ -1,22 +1,14 @@
 import torch
-from typing import Callable, Union, Iterable
+from typing import Callable
 from typing_extensions import TypeAlias
 from torch import Tensor, LongTensor, no_grad
-from enum import Enum, auto
 from .log_level import log_level
 from .device import DeviceType
+from .clip_identifiers import ClipImplementation, ClipCheckpoint
+from .tokenize_text import get_hf_tokenizer
+from .prompt_type import Prompts
 
-Prompts: TypeAlias = Union[str, Iterable[str]]
 Embed: TypeAlias = Callable[[Prompts], Tensor]
-
-class ClipImplementation(Enum):
-  HF = auto()
-  OpenCLIP = auto()
-  # OpenAI CLIP and clip-anytorch not implemented
-
-class ClipCheckpoint(Enum):
-  OpenAI = auto()
-  LAION = auto()
 
 def get_embedder(
   impl: ClipImplementation,
@@ -27,24 +19,22 @@ def get_embedder(
 ) -> Embed:
   match(impl):
     case ClipImplementation.HF:
-      from transformers import CLIPTextModel, PreTrainedTokenizer, CLIPTokenizer, logging
+      from transformers import CLIPTextModel, PreTrainedTokenizer, logging
       from transformers.modeling_outputs import BaseModelOutputWithPooling
       from transformers.tokenization_utils_base import BatchEncoding
       match(ckpt):
         case ClipCheckpoint.OpenAI:
           model_name = 'openai/clip-vit-large-patch14'
-          tokenizer_extra_args = {}
-          encoder_extra_args = {}
+          extra_args = {}
         case ClipCheckpoint.LAION:
           # model_name = 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
           model_name = 'stabilityai/stable-diffusion-2'
-          tokenizer_extra_args = {'subfolder': 'tokenizer'}
-          encoder_extra_args = {'subfolder': 'text_encoder'}
+          extra_args = {'subfolder': 'text_encoder'}
         case _:
           raise "never heard of '{ckpt}' ClipCheckpoint."
-      tokenizer: PreTrainedTokenizer = CLIPTokenizer.from_pretrained(model_name, **tokenizer_extra_args)
+      tokenizer: PreTrainedTokenizer = get_hf_tokenizer(ckpt=ckpt)
       with log_level(logging.ERROR):
-        text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, **encoder_extra_args).to(device).eval()
+        text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, **extra_args).to(device).eval()
       
       def embed(prompts: Prompts) -> Tensor:
         tokens: BatchEncoding = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt")

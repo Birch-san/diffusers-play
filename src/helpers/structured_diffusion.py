@@ -1,14 +1,12 @@
-from dataclasses import dataclass
-import stanza
-from stanza.models.common.doc import Document
+from torch import Tensor, LongTensor
 from nltk.tree import Tree
-from transformers import CLIPTokenizer, CLIPTextModel
-from torch import Tensor, LongTensor, no_grad
 import numpy as np
 from numpy.typing import NDArray
-from typing import Iterable, List, NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
-from .embed_text import Embed, Tokenize
+from .embed_text import Embed
+from .tokenize_text import CountTokens
+from .prompt_type import Prompts
 
 class Span(NamedTuple):
   start: int
@@ -110,15 +108,27 @@ def align_sequence(main_seq, seq, span, eos_loc, dim=1, zero_out=False, replace_
 
   return main_seq.transpose(0, dim)
 
-nlp = stanza.Pipeline(lang='en', processors='tokenize,pos,constituency')
+def get_structured_embedder(embed: Embed, count_tokens: CountTokens) -> Embed:
+  import stanza
+  from stanza.models.common.doc import Document, Sentence
+  from stanza.models.constituency.parse_tree import Tree as ConstituencyTree
+  stanza_batch_delimeter = '\n\n'
+  nlp = stanza.Pipeline(lang='en', processors='tokenize,pos,constituency')
 
-def get_structured_embedder(embed: Embed, tokenize: Tokenize) -> Embed:
-  def get_structured_embed(prompts: Iterable[str]) -> Tensor:
-    pass
+  def parse_constituency(prompt: str, constituency: ConstituencyTree):
+    mytree: Tree = Tree.fromstring(str(constituency))
+    nps, spans, noun_chunk = get_all_nps(mytree, prompt)
+
+  def get_structured_embed(prompts: Prompts) -> Tensor:
+    if isinstance(prompts, str):
+      prompts: List[str] = [prompts]
+    for prompt in prompts:
+      assert not prompt.__contains__(stanza_batch_delimeter)
+    prompt_batch: str = stanza_batch_delimeter.join(prompts)
+    doc: Document = nlp.process(prompt_batch)
+
+    for prompt, sentence in zip(prompts, doc.sentences):
+      sentence: Sentence = sentence
+      constituency: ConstituencyTree = sentence.constituency
+      parse_constituency(prompt, constituency)
   return get_structured_embed
-
-prompt = 'two blue sheep with a red car'
-doc: Document = nlp(prompt)
-mytree: Tree = Tree.fromstring(str(doc.sentences[0].constituency))
-nps, spans, noun_chunk = get_all_nps(mytree, prompt)
-tokenized: LongTensor = 

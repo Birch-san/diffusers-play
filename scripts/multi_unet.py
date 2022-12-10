@@ -9,7 +9,8 @@ from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
-from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
+from helpers.clip_identifiers import ClipCheckpoint, ClipImplementation
+from helpers.embed_text import Embed, get_embedder
 from k_diffusion.external import DiscreteSchedule
 from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m
 
