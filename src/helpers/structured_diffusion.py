@@ -123,11 +123,18 @@ def get_structured_embedder(embed: Embed, count_tokens: CountTokens) -> Embed:
     if isinstance(prompts, str):
       prompts: List[str] = [prompts]
     for prompt in prompts:
+    # fast-path for when our batch-of-prompts starts with uncond prompt
+    # exclude uncond prompt from NLP and seq alignment
+    first, *rest = prompts
+    cond_prompts: List[str] = rest if first == '' else prompts
+
+    for prompt in cond_prompts:
       assert not prompt.__contains__(stanza_batch_delimeter)
-    prompt_batch: str = stanza_batch_delimeter.join(prompts)
+
+    prompt_batch: str = stanza_batch_delimeter.join(cond_prompts)
     doc: Document = nlp.process(prompt_batch)
 
-    for prompt, sentence in zip(prompts, doc.sentences):
+    for prompt, sentence in zip(cond_prompts, doc.sentences):
       sentence: Sentence = sentence
       constituency: ConstituencyTree = sentence.constituency
       parse_constituency(prompt, constituency)
