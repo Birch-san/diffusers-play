@@ -159,6 +159,11 @@ with no_grad():
   if cfg_enabled:
     uc, c = embed_chunked
     uc_mask, c_mask = mask_chunked
+    # masking uncond gave me pretty bad results. it could be a special case because SD has trained on the uncond
+    # embedding far more times than any other, so maybe it learned to utilise its padding token embeddings.
+    # TODO: perhaps we don't need to use all 77 token embeddings. there may be a middle-ground between 2 and 77.
+    #       if found: this may enable us to *crop* the embedding tensors instead of masking them, resulting in faster cross-attention
+    uc_mask = torch.ones_like(uc_mask)
   else:
     uc = None
     c, = embed_chunked
