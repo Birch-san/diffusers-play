@@ -19,6 +19,8 @@ from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
 from helpers.clip_identifiers import ClipCheckpoint, ClipImplementation
 from helpers.embed_text import Embed, get_embedder
+from helpers.tokenize_text import CountTokens, get_token_counter
+from helpers.structured_diffusion import get_structured_embedder, StructuredEmbed, StructuredEmbedding
 
 from typing import List
 from PIL import Image
@@ -26,6 +28,7 @@ import time
 
 half = True
 cfg_enabled = True
+structured_diffusion = True
 
 n_rand_seeds = 10
 seeds = [
@@ -115,6 +118,14 @@ embed: Embed = get_embedder(
   device=device,
   torch_dtype=torch_dtype
 )
+count_tokens: CountTokens = get_token_counter(
+  impl=clip_impl,
+  ckpt=clip_ckpt,
+)
+sembed: StructuredEmbed = get_structured_embedder(
+  embed=embed,
+  count_tokens=count_tokens,
+)
 
 schedule_template = KarrasScheduleTemplate.Mastering
 schedule: KarrasScheduleParams = get_template_schedule(schedule_template, unet_k_wrapped)
@@ -137,8 +148,7 @@ print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quant
 prompt = 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
 # prompt = "masterpiece character portrait of a blonde girl, full resolution, 4k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination, vaporwave"
 
-unprompts = [''] if cfg_enabled else []
-prompts = [*unprompts, prompt]
+prompts = [prompt]
 
 sample_path='out'
 intermediates_path='intermediates'
@@ -153,13 +163,23 @@ width = 768 if is_768 else 512
 height = width
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
-  text_embeddings: Tensor = embed(prompts)
-  chunked = text_embeddings.chunk(text_embeddings.size(0))
-  if cfg_enabled:
-    uc, c = chunked
+  if structured_diffusion:
+    structured_embedding: StructuredEmbedding = sembed(prompts, gimme_uncond=cfg_enabled)
+    uc = structured_embedding.uncond
+    c = structured_embedding.embeds
+    struc_args = {
+
+    }
   else:
-    uc = None
-    c, = chunked
+    unprompts = [''] if cfg_enabled else []
+    text_embeddings: Tensor = embed([*unprompts, *prompts])
+    chunked = text_embeddings.chunk(text_embeddings.size(0))
+    if cfg_enabled:
+      uc, c = chunked
+    else:
+      uc = None
+      c, = chunked
+    struc_args = {}
 
   batch_tic = time.perf_counter()
   for seed in seeds:
@@ -169,10 +189,12 @@ with no_grad():
     tic = time.perf_counter()
 
     denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=cond_scale)
+    extra_args = struc_args
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
       sigma_min=sigma_min,
       sigma_max=sigma_max,
+      extra_args=extra_args,
       # there's no requirement that the noise sampler's seed be coupled to the init noise seed;
       # I'm just re-using it because it's a convenient arbitrary number
       seed=seed,
