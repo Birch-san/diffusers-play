@@ -5,7 +5,7 @@ from helpers.device import DeviceLiteral, get_device_type
 from helpers.clip_identifiers import ClipCheckpoint, ClipImplementation
 from helpers.embed_text import Embed, get_embedder
 from helpers.tokenize_text import CountTokens, get_token_counter
-from helpers.structured_diffusion import get_structured_embedder
+from helpers.structured_diffusion import get_structured_embedder, StructuredEmbed, StructuredEmbedding
 from typing import List
 
 device_type: DeviceLiteral = get_device_type()
@@ -47,19 +47,14 @@ count_tokens: CountTokens = get_token_counter(
   impl=clip_impl,
   ckpt=clip_ckpt,
 )
-sembed: Embed = get_structured_embedder(
+sembed: StructuredEmbed = get_structured_embedder(
   embed=embed,
   count_tokens=count_tokens,
 )
 
 prompt = 'two blue sheep with a red car'
-unprompts = [''] if cfg_enabled else []
-prompts: List[str] = [*unprompts, prompt]
+prompts: List[str] = [prompt]
 with no_grad():
-  text_embeddings: Tensor = sembed(prompts)
-  chunked = text_embeddings.chunk(text_embeddings.size(0))
-  if cfg_enabled:
-    uc, c = chunked
-  else:
-    uc = None
-    c, = chunked
+  structured_embedding: StructuredEmbedding = sembed(prompts, gimme_uncond=cfg_enabled)
+  uc = structured_embedding.uncond
+  c = structured_embedding.embeds

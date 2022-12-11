@@ -1,9 +1,9 @@
 from dataclasses import dataclass
+from functools import partial
 import torch
 from torch import Tensor, LongTensor, tensor
 from nltk.tree import Tree
-from typing import List
-from functools import reduce
+from typing import List, Optional, Protocol
 import re
 
 from .embed_text import Embed
@@ -24,14 +24,22 @@ def get_deepest_nps(tree: Tree) -> List[Tree]:
 def brace_comma_delimit(elems: List[str]) -> str:
   return '[%s]' % ', '.join(elems)
 
-def align_nps(embed: Tensor, np_embeds: Tensor, np_start_ixs: LongTensor, np_end_ixs: LongTensor) -> Tensor:
-  embed = embed.detach().clone()
-  for np_embed, np_start_ix, np_end_ix in zip(np_embeds, np_start_ixs, np_end_ixs):
-  # these indices were computed without encoding BOS token. increment in order to line up with how embed was tokenized.
-    np_start_ix += 1
-    np_end_ix += 1
-    embed[np_start_ix:np_end_ix] = np_embed[np_start_ix:np_end_ix]
+def align_np(embed: Tensor, np_embed: Tensor, np_start_ix: LongTensor, np_end_ix: LongTensor) -> Tensor:
+  embed = embed.clone()
+  embed[np_start_ix:np_end_ix] = np_embed[np_start_ix:np_end_ix]
   return embed
+
+def align_nps(embed: Tensor, np_embeds: Tensor, np_start_ixs: LongTensor, np_end_ixs: LongTensor) -> Tensor:
+  # make it cheaper for align_np to clone
+  embed = embed.detach()
+  align_np_ = partial(align_np, embed)
+  return torch.stack([
+    # I don't understand why this clone is necessary (each align_np() call modifies their own clone).
+    # but without it: I found that the align_np() outputs had almost no token embeddings in common with the nominal embed.
+    # maybe it's an MPS bug.
+    embed.clone(),
+    *map(lambda z: align_np_(*z), zip(np_embeds, np_start_ixs, np_end_ixs))
+  ])
 
 @dataclass
 class IndexedNounPhrases():
@@ -39,7 +47,16 @@ class IndexedNounPhrases():
   start_ixs: LongTensor
   end_ixs: LongTensor
 
-def get_structured_embedder(embed: Embed, count_tokens: CountTokens, device: torch.device = torch.device('cpu')) -> Embed:
+@dataclass
+class StructuredEmbedding():
+  embeds: Tensor
+  uncond: Optional[Tensor]
+  np_arities: List[int]
+
+class StructuredEmbed(Protocol):
+  def __call__(self, prompts: Prompts, gimme_uncond=False) -> StructuredEmbedding: ...
+
+def get_structured_embedder(embed: Embed, count_tokens: CountTokens, device: torch.device = torch.device('cpu')) -> StructuredEmbed:
   import stanza
   from stanza.models.common.doc import Document, Sentence
   from stanza.models.constituency.parse_tree import Tree as ConstituencyTree
@@ -67,22 +84,18 @@ def get_structured_embedder(embed: Embed, count_tokens: CountTokens, device: tor
     # cumsum is a no-op on MPS on some nightlies, including 1.14.0.dev20221105
     # https://github.com/pytorch/pytorch/issues/89784
     part_counts_cumsum: LongTensor = part_counts.cpu().cumsum(0).to(device) if device.type == 'mps' else part_counts.cumsum(0)
-    noun_phrase_start_ixs: LongTensor = part_counts_cumsum.index_select(0, indices_tensor)
-    noun_phrase_end_ixs: LongTensor = noun_phrase_start_ixs + noun_phrase_token_counts
+    # our token lengths were computed without encoding BOS token. increment by 1 in order to line up with how prompt will be tokenized downstream.
+    noun_phrase_start_ixs: LongTensor = part_counts_cumsum.index_select(0, indices_tensor) + 1
+    noun_phrase_end_ixs: LongTensor = noun_phrase_start_ixs + noun_phrase_token_counts + 1
     return IndexedNounPhrases(
       noun_phrases=noun_phrases,
       start_ixs=noun_phrase_start_ixs,
       end_ixs=noun_phrase_end_ixs,
     )
 
-  def get_structured_embed(prompts: Prompts) -> Tensor:
-    if isinstance(prompts, str):
-      prompts: List[str] = [prompts]
-
-    # fast-path for when our batch-of-prompts starts with uncond prompt
-    # exclude uncond prompt from NLP and seq alignment
-    first, *rest = prompts
-    cond_prompts: List[str] = rest if first == '' else prompts
+  def get_structured_embed(cond_prompts: Prompts, gimme_uncond=False) -> StructuredEmbedding:
+    if isinstance(cond_prompts, str):
+      cond_prompts: List[str] = [cond_prompts]
 
     for prompt in cond_prompts:
       assert not prompt.__contains__(stanza_batch_delimeter)
@@ -96,16 +109,19 @@ def get_structured_embedder(embed: Embed, count_tokens: CountTokens, device: tor
     np_start_ixs: List[LongTensor] = [inp.start_ixs for inp in indexed_nps]
     np_end_ixs: List[LongTensor] = [inp.end_ixs for inp in indexed_nps]
     nps_flattened: List[str] = [noun_phrase for nps in nps for noun_phrase in nps]
+    uncond_prompts: List[str] = [''] if gimme_uncond else []
+    prompts: List[str] = [*uncond_prompts, *cond_prompts]
     embeds: Tensor = embed([*prompts, *nps_flattened])
     embeds_nominal, *np_embeds = embeds.split((len(prompts), *np_arities))
-    uncond_embed, cond_embeds = embeds_nominal.split((1, embeds_nominal.size(0)-1)) if first == '' else (
+    uncond_embed, cond_embeds = embeds_nominal.split((1, embeds_nominal.size(0)-1)) if gimme_uncond else (
       None,
       embeds_nominal
     )
-    aligned_embeds: Tensor = torch.stack([
-      *([] if uncond_embed is None else [uncond_embed.squeeze(0)]),
-      *[align_nps(*e) for e in zip(cond_embeds, np_embeds, np_start_ixs, np_end_ixs)]
-    ])
-    return aligned_embeds
+    aligned_embeds: Tensor = torch.cat([align_nps(*e) for e in zip(cond_embeds, np_embeds, np_start_ixs, np_end_ixs)])
+    return StructuredEmbedding(
+      embeds=aligned_embeds,
+      uncond=uncond_embed,
+      np_arities=np_arities,
+    )
 
   return get_structured_embed
