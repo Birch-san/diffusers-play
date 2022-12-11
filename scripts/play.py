@@ -4,7 +4,7 @@ import os
 from helpers.brownian_tree_mps_fix import reassuring_message
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
-from helpers.cfg_denoiser import CFGDenoiser
+from helpers.cfg_denoiser import Denoiser, DenoiserFactory
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 print(reassuring_message) # avoid "unused" import :P
@@ -26,9 +26,9 @@ import time
 half = True
 cfg_enabled = True
 
-n_rand_seeds = 0
+n_rand_seeds = 10
 seeds = [
-  2178792736,
+  # 2178792736,
   *[get_seed() for _ in range(n_rand_seeds)]
 ]
 
@@ -42,12 +42,12 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  'hakurei/waifu-diffusion'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
   # 'stabilityai/stable-diffusion-2-base'
-  'stabilityai/stable-diffusion-2-1-base'
+  # 'stabilityai/stable-diffusion-2-1-base'
 )
 
 sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
@@ -80,7 +80,7 @@ sampling_dtype: torch.dtype = torch.float32
 # sampling_dtype: torch.dtype = torch_dtype
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=sampling_dtype)
 unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
-denoiser = CFGDenoiser(unet_k_wrapped)
+denoiser_factory = DenoiserFactory(unet_k_wrapped)
 
 # vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
 vae_dtype = torch_dtype
@@ -167,11 +167,7 @@ with no_grad():
 
     tic = time.perf_counter()
 
-    extra_args = {
-      'cond': c,
-      'uncond': uc,
-      'cond_scale': cond_scale
-    }
+    denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=cond_scale)
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
       sigma_min=sigma_min,
@@ -184,7 +180,6 @@ with no_grad():
       denoiser,
       latents * sigmas[0],
       sigmas,
-      extra_args=extra_args,
       # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
       # callback=log_intermediates,
     ).to(vae_dtype)
