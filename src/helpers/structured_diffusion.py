@@ -24,15 +24,14 @@ def get_deepest_nps(tree: Tree) -> List[Tree]:
 def brace_comma_delimit(elems: List[str]) -> str:
   return '[%s]' % ', '.join(elems)
 
-def align_np(embed: Tensor, np_embed: Tensor, np_start_ix: LongTensor, np_end_ix: LongTensor) -> Tensor:
-  # these indices were computed without encoding BOS token. increment in order to line up with how embed was tokenized.
-  np_start_ix += 1
-  np_end_ix += 1
-  embed[np_start_ix:np_end_ix] = np_embed[np_start_ix:np_end_ix]
-  return embed
-
 def align_nps(embed: Tensor, np_embeds: Tensor, np_start_ixs: LongTensor, np_end_ixs: LongTensor) -> Tensor:
-  return reduce(lambda embed, z: align_np(embed, *z), zip(np_embeds, np_start_ixs, np_end_ixs), embed.detach().clone())
+  embed = embed.detach().clone()
+  for np_embed, np_start_ix, np_end_ix in zip(np_embeds, np_start_ixs, np_end_ixs):
+  # these indices were computed without encoding BOS token. increment in order to line up with how embed was tokenized.
+    np_start_ix += 1
+    np_end_ix += 1
+    embed[np_start_ix:np_end_ix] = np_embed[np_start_ix:np_end_ix]
+  return embed
 
 @dataclass
 class IndexedNounPhrases():
