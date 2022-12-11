@@ -1,5 +1,7 @@
+from functools import partial
 from .diffusers_denoiser import DiffusersSDDenoiser
-from torch import Tensor, cat
+import torch
+from torch import Tensor, LongTensor, cat, tensor
 from typing import Optional, Protocol, NamedTuple, List
 from abc import ABC, abstractmethod
 
@@ -78,12 +80,7 @@ class NoCFGDenoiser(Denoiser):
   def __call__(self, x: Tensor, sigma: Tensor) -> Tensor:
     return self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
 
-class StructuredDiffusionDenoiser(Denoiser):
-  denoiser: DiffusersSDDenoiser
-  uncond: Tensor
-  cond: Tensor
-  np_arities: List[int]
-  cond_scale: float
+class StructuredDiffusionDenoiser(ParallelCFGDenoiser):
   def __init__(
     self,
     denoiser: DiffusersSDDenoiser,
@@ -92,13 +89,16 @@ class StructuredDiffusionDenoiser(Denoiser):
     np_arities: List[int],
     cond_scale: float = 1.0,
   ):
-    self.denoiser = denoiser
+    super().__init__(
+      denoiser=denoiser,
+      uncond=uncond,
+      cond=cond,
+      cond_scale=cond_scale,
+    )
+    np_arities: LongTensor = tensor(np_arities, dtype=torch.long, device=cond.device)
+    self.denoiser = partial(denoiser, np_arities=np_arities)
     self.uncond = uncond
     self.cond = cond
-    self.np_arities = np_arities
-    self.cond_scale = cond_scale
-  def __call__(self, x: Tensor, sigma: Tensor) -> Tensor:
-    return self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
 
 class DenoiserFactory():
   denoiser: DiffusersSDDenoiser
