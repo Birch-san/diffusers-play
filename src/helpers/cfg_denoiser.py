@@ -1,6 +1,6 @@
 from .diffusers_denoiser import DiffusersSDDenoiser
 from torch import Tensor, cat
-from typing import Optional, Protocol, NamedTuple
+from typing import Optional, Protocol, NamedTuple, List
 from abc import ABC, abstractmethod
 
 class Denoiser(Protocol):
@@ -78,6 +78,28 @@ class NoCFGDenoiser(Denoiser):
   def __call__(self, x: Tensor, sigma: Tensor) -> Tensor:
     return self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
 
+class StructuredDiffusionDenoiser(Denoiser):
+  denoiser: DiffusersSDDenoiser
+  uncond: Tensor
+  cond: Tensor
+  np_arities: List[int]
+  cond_scale: float
+  def __init__(
+    self,
+    denoiser: DiffusersSDDenoiser,
+    uncond: Tensor,
+    cond: Tensor,
+    np_arities: List[int],
+    cond_scale: float = 1.0,
+  ):
+    self.denoiser = denoiser
+    self.uncond = uncond
+    self.cond = cond
+    self.np_arities = np_arities
+    self.cond_scale = cond_scale
+  def __call__(self, x: Tensor, sigma: Tensor) -> Tensor:
+    return self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
+
 class DenoiserFactory():
   denoiser: DiffusersSDDenoiser
   # this is a workaround which caters for some wacky experiments
@@ -94,7 +116,19 @@ class DenoiserFactory():
     cond: Tensor,
     uncond: Optional[Tensor] = None,
     cond_scale: float = 1.0,
+    np_arities: Optional[List[int]] = None,
   ) -> Denoiser:
+    if np_arities is not None:
+      # structured diffusion
+      assert uncond is not None and cond_scale > 1, 'structured diffusion only implemented for CFG; please provide uncond and set cond_scale > 1'
+      assert self.one_at_a_time is False, "structured diffusion only implemented for parallel usage, i.e. submitting uncond and cond simultaneously"
+      return StructuredDiffusionDenoiser(
+        uncond=uncond,
+        denoiser=self.denoiser,
+        cond=cond,
+        np_arities=np_arities,
+        cond_scale=cond_scale,
+      )
     if uncond is None or cond_scale is None:
       return NoCFGDenoiser(
         denoiser=self.denoiser,

@@ -167,9 +167,7 @@ with no_grad():
     structured_embedding: StructuredEmbedding = sembed(prompts, gimme_uncond=cfg_enabled)
     uc = structured_embedding.uncond
     c = structured_embedding.embeds
-    struc_args = {
-
-    }
+    np_arities = structured_embedding.np_arities
   else:
     unprompts = [''] if cfg_enabled else []
     text_embeddings: Tensor = embed([*unprompts, *prompts])
@@ -179,7 +177,7 @@ with no_grad():
     else:
       uc = None
       c, = chunked
-    struc_args = {}
+    np_arities = None
 
   batch_tic = time.perf_counter()
   for seed in seeds:
@@ -188,13 +186,16 @@ with no_grad():
 
     tic = time.perf_counter()
 
-    denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=cond_scale)
-    extra_args = struc_args
+    denoiser: Denoiser = denoiser_factory(
+      uncond=uc,
+      cond=c,
+      cond_scale=cond_scale,
+      np_arities=np_arities,
+    )
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
       sigma_min=sigma_min,
       sigma_max=sigma_max,
-      extra_args=extra_args,
       # there's no requirement that the noise sampler's seed be coupled to the init noise seed;
       # I'm just re-using it because it's a convenient arbitrary number
       seed=seed,
