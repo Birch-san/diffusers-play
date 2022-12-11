@@ -1,128 +1,85 @@
-from torch import Tensor, LongTensor
+from dataclasses import dataclass
+import torch
+from torch import Tensor, LongTensor, tensor
 from nltk.tree import Tree
-import numpy as np
-from numpy.typing import NDArray
-from typing import List, NamedTuple, Optional
+from typing import List
+from functools import reduce
+import re
 
 from .embed_text import Embed
 from .tokenize_text import CountTokens
 from .prompt_type import Prompts
 
-class Span(NamedTuple):
-  start: int
-  end: int
 
-class IndexedNounPhrase(NamedTuple):
-  noun_phrase: str
-  span: Span
+def get_deepest_nps(tree: Tree) -> List[Tree]:
+  found = []
+  for subtree in tree:
+    if isinstance(subtree, Tree):
+      found.extend(get_deepest_nps(subtree))
+  
+  if not found and tree.label() == 'NP':
+    found.append(tree)
+  return found
 
-class AllNounPhrases(NamedTuple):
-  all_nps: List[str]
-  spans: List[Span]
-  lowest_nps: List[IndexedNounPhrase]
+def brace_comma_delimit(elems: List[str]) -> str:
+  return '[%s]' % ', '.join(elems)
 
-def get_sub_nps(tree: Tree, left: int, right: int) -> List[IndexedNounPhrase]:
-  leaves: List[str] = tree.leaves()
-  n_leaves: int = len(leaves)
-  if isinstance(tree, str) or n_leaves == 1:
-    return []
-  sub_nps: List[IndexedNounPhrase] = []
-  n_subtree_leaves: List[int] = [len(t.leaves()) for t in tree]
-  offset: NDArray = np.cumsum([0] + n_subtree_leaves)[:len(n_subtree_leaves)]
-  assert right - left == n_leaves
-  if tree.label() == 'NP' and n_leaves > 1:
-    noun_phrase=" ".join(leaves)
-    span = Span(
-      start=int(left),
-      end=int(right),
-    )
-    indexed_noun_phrase = IndexedNounPhrase(
-      noun_phrase=noun_phrase,
-      span=span
-    )
-    sub_nps.append(indexed_noun_phrase)
-  for i, subtree in enumerate(tree):
-    sub_nps += get_sub_nps(subtree, left=left+offset[i], right=left+offset[i]+n_subtree_leaves[i])
-  return sub_nps
+def align_np(embed: Tensor, np_embed: Tensor, np_start_ix: LongTensor, np_end_ix: LongTensor) -> Tensor:
+  # these indices were computed without encoding BOS token. increment in order to line up with how embed was tokenized.
+  np_start_ix += 1
+  np_end_ix += 1
+  embed[np_start_ix:np_end_ix] = np_embed[np_start_ix:np_end_ix]
+  return embed
 
-def get_all_nps(tree: Tree, full_sent: Optional[str]=None) -> AllNounPhrases:
-  start: int = 0
-  end: int = len(tree.leaves())
+def align_nps(embed: Tensor, np_embeds: Tensor, np_start_ixs: LongTensor, np_end_ixs: LongTensor) -> Tensor:
+  return reduce(lambda embed, z: align_np(embed, *z), zip(np_embeds, np_start_ixs, np_end_ixs), embed.detach().clone())
 
-  all_nps: List[IndexedNounPhrase] = get_sub_nps(tree, left=start, right=end)
-  lowest_nps: List[IndexedNounPhrase] = []
-  for np in all_nps:
-    _, span = np
-    start, end = span
-    lowest = True
-    for np_ in all_nps:
-      _, span_ = np_
-      start_, end_ = span_
-      if start_ >= start and end_ <= end:
-        lowest = False
-        break
-    if lowest:
-      lowest_nps.append(np)
+@dataclass
+class IndexedNounPhrases():
+  noun_phrases: List[str]
+  start_ixs: LongTensor
+  end_ixs: LongTensor
 
-  all_nps, spans = map(list, zip(*all_nps))
-  if full_sent and full_sent not in all_nps:
-    all_nps: List[str] = [full_sent] + all_nps
-    spans: List[Span] = [Span(start, end)] + spans
-
-  return AllNounPhrases(
-    all_nps=all_nps,
-    spans=spans,
-    lowest_nps=lowest_nps
-  )
-
-def expand_sequence(seq, length, dim=1):
-  seq = seq.transpose(0, dim)
-  max_length = seq.size(0)
-  n_repeat = (max_length - 2) // length
-  repeat_size = (n_repeat,) + (1, ) * (len(seq.size()) -1)
-
-  eos = seq[length+1, ...].clone()
-  segment = seq[1:length+1, ...].repeat(*repeat_size)
-  seq[1:len(segment)+1] = segment
-  seq[len(segment)+1] = eos
-
-  return seq.transpose(0, dim)
-
-def align_sequence(main_seq, seq, span, eos_loc, dim=1, zero_out=False, replace_pad=False):
-  seq = seq.transpose(0, dim)
-  main_seq = main_seq.transpose(0, dim)
-  start, end = span[0]+1, span[1]+1
-  seg_length = end - start
-
-  # TODO: use torch.where(main_seq)
-  #       err torch.index_put
-  # main_seq.index_put(, seq[1:1+seg_length])
-  main_seq[start:end] = seq[1:1+seg_length]
-  if zero_out:
-    main_seq[1:start] = 0
-    main_seq[end:eos_loc] = 0
-
-  if replace_pad:
-    pad_length = len(main_seq) - eos_loc
-    main_seq[eos_loc:] = seq[1+seg_length:1+seg_length+pad_length]
-
-  return main_seq.transpose(0, dim)
-
-def get_structured_embedder(embed: Embed, count_tokens: CountTokens) -> Embed:
+def get_structured_embedder(embed: Embed, count_tokens: CountTokens, device: torch.device = torch.device('cpu')) -> Embed:
   import stanza
   from stanza.models.common.doc import Document, Sentence
   from stanza.models.constituency.parse_tree import Tree as ConstituencyTree
   stanza_batch_delimeter = '\n\n'
-  nlp = stanza.Pipeline(lang='en', processors='tokenize,pos,constituency')
+  nlp = stanza.Pipeline(lang='en', processors='tokenize,pos,constituency', device=device)
 
-  def parse_constituency(prompt: str, constituency: ConstituencyTree):
-    mytree: Tree = Tree.fromstring(str(constituency))
-    nps, spans, noun_chunk = get_all_nps(mytree, prompt)
+  def fit_noun_phrases_to_prompt(prompt: str, sentence: Sentence) -> IndexedNounPhrases:
+    constituency: ConstituencyTree = sentence.constituency
+    tree: Tree = Tree.fromstring(str(constituency))
+    deepest_nps: List[Tree] = get_deepest_nps(tree)
+    np_stanza_tokens: List[List[str]] = [np_.leaves() for np_ in deepest_nps]
+    pattern: str = '^(.*)%s(.*)$' % '(.*)'.join(['(%s)' % '\s*'.join([re.escape(token) for token in tokens]) for tokens in np_stanza_tokens])
+    matches = re.search(pattern, prompt)
+    assert matches is not None, f"Failed to fit noun-phrases back onto original phrase. Used regex pattern: <{pattern}> to match tokens [{brace_comma_delimit([brace_comma_delimit(tokens) for tokens in np_stanza_tokens])}] to prompt <{prompt}>"
+    match_groups = matches.groups()
+    counts = count_tokens([prompt, *match_groups], device=device)
+    counts_len, = counts.shape
+    whole_count, part_counts = counts.split((1, counts_len-1))
+    whole_count_item, part_counts_sum_item = whole_count.item(), part_counts.sum().item()
+    assert whole_count_item == part_counts_sum_item, "Failed to fit noun-phrases back onto original phrase. Whole phrase has {whole_count_item} tokens, but parts added to {part_counts_sum_item} tokens."
+    noun_phrase_capture_group_indices = [2*ix+1 for ix in range(0, len(np_stanza_tokens))]
+    noun_phrases: List[str] = [match_groups[ix] for ix in noun_phrase_capture_group_indices]
+    indices_tensor = tensor(noun_phrase_capture_group_indices, device=device)
+    noun_phrase_token_counts: LongTensor = part_counts.index_select(0, indices_tensor)
+    # cumsum is a no-op on MPS on some nightlies, including 1.14.0.dev20221105
+    # https://github.com/pytorch/pytorch/issues/89784
+    part_counts_cumsum: LongTensor = part_counts.cpu().cumsum(0).to(device) if device.type == 'mps' else part_counts.cumsum(0)
+    noun_phrase_start_ixs: LongTensor = part_counts_cumsum.index_select(0, indices_tensor)
+    noun_phrase_end_ixs: LongTensor = noun_phrase_start_ixs + noun_phrase_token_counts
+    return IndexedNounPhrases(
+      noun_phrases=noun_phrases,
+      start_ixs=noun_phrase_start_ixs,
+      end_ixs=noun_phrase_end_ixs,
+    )
 
   def get_structured_embed(prompts: Prompts) -> Tensor:
     if isinstance(prompts, str):
       prompts: List[str] = [prompts]
-    for prompt in prompts:
+
     # fast-path for when our batch-of-prompts starts with uncond prompt
     # exclude uncond prompt from NLP and seq alignment
     first, *rest = prompts
@@ -134,8 +91,22 @@ def get_structured_embedder(embed: Embed, count_tokens: CountTokens) -> Embed:
     prompt_batch: str = stanza_batch_delimeter.join(cond_prompts)
     doc: Document = nlp.process(prompt_batch)
 
-    for prompt, sentence in zip(cond_prompts, doc.sentences):
-      sentence: Sentence = sentence
-      constituency: ConstituencyTree = sentence.constituency
-      parse_constituency(prompt, constituency)
+    indexed_nps: List[IndexedNounPhrases] = [fit_noun_phrases_to_prompt(*z) for z in zip(cond_prompts, doc.sentences)]
+    nps: List[List[str]] = [inp.noun_phrases for inp in indexed_nps]
+    np_arities: List[int] = [len(nps) for nps in nps]
+    np_start_ixs: List[LongTensor] = [inp.start_ixs for inp in indexed_nps]
+    np_end_ixs: List[LongTensor] = [inp.end_ixs for inp in indexed_nps]
+    nps_flattened: List[str] = [noun_phrase for nps in nps for noun_phrase in nps]
+    embeds: Tensor = embed([*prompts, *nps_flattened])
+    embeds_nominal, *np_embeds = embeds.split((len(prompts), *np_arities))
+    uncond_embed, cond_embeds = embeds_nominal.split((1, embeds_nominal.size(0)-1)) if first == '' else (
+      None,
+      embeds_nominal
+    )
+    aligned_embeds: Tensor = torch.stack([
+      *([] if uncond_embed is None else [uncond_embed.squeeze(0)]),
+      *[align_nps(*e) for e in zip(cond_embeds, np_embeds, np_start_ixs, np_end_ixs)]
+    ])
+    return aligned_embeds
+
   return get_structured_embed
