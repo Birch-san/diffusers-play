@@ -193,7 +193,7 @@ static_weight_getter: GetModelWeight = static_model_weight(equal_weight)
 # initially (high-sigma denoising): only SD2 is used, and carves out the composition for the bear.
 # once model starts denoising medium sigmas (below 2): we introduce waifu-diffusion with 60% weighting,
 # to influence the fine details towards a watercolour style
-cutoff: float = 5.
+cutoff: float = 4.
 model_weights: Dict[ModelId, GetModelWeight] = {
   # ModelId.JPSD: static_weight_getter,
   # ModelId.WD: static_weight_getter,
