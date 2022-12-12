@@ -53,6 +53,7 @@ class SerialCFGDenoiser(AbstractCFGDenoiser):
 
 class ParallelCFGDenoiser(AbstractCFGDenoiser):
   cond_in: Tensor
+  noised_latent_copies_needed: int
   def __init__(
     self,
     denoiser: DiffusersSDDenoiser,
@@ -61,12 +62,14 @@ class ParallelCFGDenoiser(AbstractCFGDenoiser):
     cond_scale: float,
   ):
     self.cond_in = cat([uncond, cond])
+    self.noised_latent_copies_needed = self.cond_in.size(dim=0)
     super().__init__(
       denoiser=denoiser,
       cond_scale=cond_scale,
     )
+
   def get_cfg_conds(self, x: Tensor, sigma: Tensor) -> CFGConds:
-    x_in = x.expand(self.cond_in.size(dim=0), -1, -1, -1)
+    x_in = x.expand(self.noised_latent_copies_needed, -1, -1, -1)
     del x
     uncond, cond = self.denoiser(input=x_in, sigma=sigma, encoder_hidden_states=self.cond_in).chunk(self.cond_in.size(dim=0))
     return CFGConds(uncond, cond)
@@ -99,6 +102,7 @@ class StructuredDiffusionDenoiser(ParallelCFGDenoiser):
     self.denoiser = partial(denoiser, np_arities=np_arities)
     self.uncond = uncond
     self.cond = cond
+    self.noised_latent_copies_needed = 1 + np_arities.size(0)
 
 class DenoiserFactory():
   denoiser: DiffusersSDDenoiser
