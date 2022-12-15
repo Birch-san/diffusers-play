@@ -4,3 +4,6 @@
 [submodule "k-diffusion"]
 	path = src/k-diffusion
 	url = https://github.com/Birch-san/k-diffusion.git
+[submodule "lora"]
+	path = src/lora
+	url = https://github.com/Birch-san/lora.git
