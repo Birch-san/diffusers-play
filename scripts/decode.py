@@ -13,6 +13,7 @@ from torchvision.transforms.functional import resize, InterpolationMode
 from torch.nn import L1Loss, Module
 from torch.optim import SGD
 from enum import Enum, auto
+from torch.nn.functional import normalize
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
@@ -22,8 +23,9 @@ samples_dir=path.join(assets_dir, 'samples')
 inputs_dir=path.join(assets_dir, 'pt')
 test_inputs_dir=path.join(assets_dir, 'test_pt')
 predictions_dir=path.join(assets_dir, 'test_pred')
+science_dir=path.join(assets_dir, 'science')
 weights_dir=path.join(assets_dir, 'weights')
-for path_ in [weights_dir, predictions_dir]:
+for path_ in [weights_dir, predictions_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
 weights_path = path.join(weights_dir, "model.pth")
@@ -78,6 +80,7 @@ def test():
 class Mode(Enum):
   Train = auto()
   Test = auto()
+  VisualizeLatents = auto()
 
 mode = Mode.Test
 match(mode):
@@ -87,3 +90,11 @@ match(mode):
     torch.save(model.state_dict(), weights_path)
   case Mode.Test:
     test()
+  case Mode.VisualizeLatents:
+    input_path = '00004.3532916755.pt'
+    sample: Tensor = torch.load(path.join(test_inputs_dir, input_path), map_location=device)
+    for ix, channel in enumerate(sample):
+      centered: Tensor = channel-(channel.max()+channel.min())/2
+      norm: Tensor = centered / centered.abs().max()
+      rescaled = (norm + 1)*(255/2)
+      write_png(rescaled.unsqueeze(0).to(dtype=torch.uint8).cpu(), path.join(science_dir, input_path.replace('pt', f'.{ix}.png')))
