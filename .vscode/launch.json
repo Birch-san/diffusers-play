@@ -32,7 +32,15 @@
       "name": "Python: Lora",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/lora.py",
+      "program": "${workspaceFolder}/src/lora/train_lora_dreambooth.py",
+      "args": [
+        "--pretrained_model_name_or_path",
+        "stabilityai/stable-diffusion-2-1-base",
+        "--instance_data_dir",
+        "${env.HOME}/plush/512_ti",
+        "--instance_prompt",
+        "fumo"
+      ],
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
