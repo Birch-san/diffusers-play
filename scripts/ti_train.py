@@ -4,12 +4,14 @@ import math
 import os
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, NamedTuple, List
+from argparse import Namespace
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
+from torch import Tensor
 from torch.utils.data import Dataset
 
 import PIL
@@ -28,7 +30,7 @@ from packaging import version
 from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
-from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer
+from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer, PreTrainedTokenizer
 
 
 if version.parse(version.parse(PIL.__version__).base_version) >= version.parse("9.1.0"):
@@ -57,15 +59,67 @@ check_min_version("0.10.0.dev0")
 logger = get_logger(__name__)
 
 
-def save_progress(text_encoder, placeholder_token_id, accelerator, args, save_path):
+class AddedTokens(NamedTuple):
+    placeholder_token: str
+    placeholder_token_ids: List[int]
+
+def add_tokens_and_get_placeholder_token(
+    args: Namespace,
+    token_ids: List[int],
+    tokenizer: PreTrainedTokenizer,
+    text_encoder: CLIPTextModel
+) -> AddedTokens:
+    assert args.num_vec_per_token >= len(token_ids)
+    placeholder_tokens: List[str] = [f"{args.placeholder_token}_{i}" for i in range(args.num_vec_per_token)]
+
+    for placeholder_token in placeholder_tokens:
+        num_added_tokens = tokenizer.add_tokens(placeholder_token)
+        if num_added_tokens == 0:
+            raise ValueError(
+                f"The tokenizer already contains the token {placeholder_token}. Please pass a different"
+                " `placeholder_token` that is not already in the tokenizer."
+            )
+    placeholder_token = " ".join(placeholder_tokens)
+    placeholder_token_ids: List[int] = tokenizer.encode(placeholder_token, add_special_tokens=False)
+    print(f"The placeholder tokens are: {placeholder_token} while the ids are {placeholder_token_ids}")
+    text_encoder.resize_token_embeddings(len(tokenizer))
+    token_embeds = text_encoder.get_input_embeddings().weight.data
+    if args.initialize_rest_random:
+        # The idea is that the placeholder tokens form adjectives as in x x x white dog.
+        for i, placeholder_token_id in enumerate(placeholder_token_ids):
+            if len(placeholder_token_ids) - i < len(token_ids):
+                token_embeds[placeholder_token_id] = token_embeds[token_ids[i % len(token_ids)]]
+            else:
+                token_embeds[placeholder_token_id] = torch.rand_like(token_embeds[placeholder_token_id])
+    else:
+        for i, placeholder_token_id in enumerate(placeholder_token_ids):
+            token_embeds[placeholder_token_id] = token_embeds[token_ids[i % len(token_ids)]]
+    return AddedTokens(placeholder_token, placeholder_token_ids)
+
+
+def save_progress(text_encoder, placeholder_tokens, placeholder_token_ids, accelerator, args, save_path):
     logger.info("Saving embeddings")
-    learned_embeds = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[placeholder_token_id]
-    learned_embeds_dict = {args.placeholder_token: learned_embeds.detach().cpu()}
+    learned_embeds = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight[placeholder_token_ids]
+    learned_embeds_dict: Dict[str, Tensor] = {
+        placeholder_token: learned_embed.detach().cpu() for placeholder_token, learned_embed in zip(placeholder_tokens.split(" "), learned_embeds)
+    }
     torch.save(learned_embeds_dict, save_path)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
+    parser.add_argument(
+        "--num_vec_per_token",
+        type=int,
+        default=1,
+        help=(
+            "The number of vectors used to represent the placeholder token. The higher the number, the better the"
+            " result at the cost of editability. This can be fixed by prompt editing."
+        ),
+    )
+    parser.add_argument(
+        "--initialize_rest_random", action="store_true", help="Initialize rest of the placeholder tokens with random."
+    )
     parser.add_argument(
         "--save_steps",
         type=int,
@@ -424,23 +478,6 @@ def main():
     elif args.pretrained_model_name_or_path:
         tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
 
-    # Add the placeholder token in tokenizer
-    num_added_tokens = tokenizer.add_tokens(args.placeholder_token)
-    if num_added_tokens == 0:
-        raise ValueError(
-            f"The tokenizer already contains the token {args.placeholder_token}. Please pass a different"
-            " `placeholder_token` that is not already in the tokenizer."
-        )
-
-    # Convert the initializer_token, placeholder_token to ids
-    token_ids = tokenizer.encode(args.initializer_token, add_special_tokens=False)
-    # Check if initializer_token is a single token or a sequence of tokens
-    if len(token_ids) > 1:
-        raise ValueError("The initializer token must be a single token.")
-
-    initializer_token_id = token_ids[0]
-    placeholder_token_id = tokenizer.convert_tokens_to_ids(args.placeholder_token)
-
     # Load models and create wrapper for stable diffusion
     text_encoder = CLIPTextModel.from_pretrained(
         args.pretrained_model_name_or_path,
@@ -466,13 +503,12 @@ def main():
                 "Could not enable memory efficient attention. Make sure xformers is installed"
                 f" correctly and a GPU is available: {e}"
             )
-
-    # Resize the token embeddings as we are adding new special tokens to the tokenizer
-    text_encoder.resize_token_embeddings(len(tokenizer))
-
-    # Initialise the newly added placeholder token with the embeddings of the initializer token
-    token_embeds = text_encoder.get_input_embeddings().weight.data
-    token_embeds[placeholder_token_id] = token_embeds[initializer_token_id]
+    
+    token_ids: List[int] = tokenizer.encode(args.initializer_token, add_special_tokens=False)
+    # regardless of whether the number of token_ids is 1 or more, it'll set one and then keep repeating.
+    placeholder_token, placeholder_token_ids = add_tokens_and_get_placeholder_token(
+        args, token_ids, tokenizer, text_encoder
+    )
 
     # Freeze vae and unet
     freeze_params(vae.parameters())
@@ -505,7 +541,7 @@ def main():
         data_root=args.train_data_dir,
         tokenizer=tokenizer,
         size=args.resolution,
-        placeholder_token=args.placeholder_token,
+        placeholder_token=placeholder_token,
         repeats=args.repeats,
         learnable_property=args.learnable_property,
         center_crop=args.center_crop,
@@ -643,7 +679,7 @@ def main():
                 optimizer.zero_grad()
 
                 # Let's make sure we don't update any embedding weights besides the newly added token
-                index_no_updates = torch.arange(len(tokenizer)) != placeholder_token_id
+                index_no_updates = torch.arange(len(tokenizer)) < placeholder_token_ids[0]
                 with torch.no_grad():
                     text_encoder.get_input_embeddings().weight[index_no_updates] = orig_embeds_params[index_no_updates]
 
@@ -653,7 +689,7 @@ def main():
                 global_step += 1
                 if global_step % args.save_steps == 0:
                     save_path = os.path.join(args.output_dir, f"learned_embeds-steps-{global_step}.bin")
-                    save_progress(text_encoder, placeholder_token_id, accelerator, args, save_path)
+                    save_progress(text_encoder, placeholder_token, placeholder_token_ids, accelerator, args, save_path)
 
                 if global_step % args.checkpointing_steps == 0:
                     if accelerator.is_main_process:
@@ -690,7 +726,7 @@ def main():
             pipeline.save_pretrained(args.output_dir)
         # Save the newly trained embeddings
         save_path = os.path.join(args.output_dir, "learned_embeds.bin")
-        save_progress(text_encoder, placeholder_token_id, accelerator, args, save_path)
+        save_progress(text_encoder, placeholder_token, placeholder_token_ids, accelerator, args, save_path)
 
         if args.push_to_hub:
             repo.push_to_hub(commit_message="End of training", blocking=False, auto_lfs_prune=True)
