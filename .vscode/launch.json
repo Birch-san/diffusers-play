@@ -46,8 +46,8 @@
         "--initializer_token",
         "plush",
         "--train_data_dir",
-        "${env.HOME}/plush/512_ti",
         "--only_save_embeds"
+        "/Users/birch/plush/512_ti",
       ],
       "console": "integratedTerminal",
       "justMyCode": true,
