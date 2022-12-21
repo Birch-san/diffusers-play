@@ -1,4 +1,5 @@
 import argparse
+from dataclasses import dataclass
 import itertools
 import math
 import os
@@ -6,6 +7,7 @@ import random
 from pathlib import Path
 from typing import Optional, Dict, NamedTuple, List
 from argparse import Namespace
+from random import sample, random
 
 import numpy as np
 import torch
@@ -15,6 +17,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 import PIL
+from PIL.Image import Image as Img
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
@@ -29,6 +32,7 @@ from huggingface_hub import HfFolder, Repository, whoami
 from packaging import version
 from PIL import Image
 from torchvision import transforms
+from torchvision.transforms.functional import hflip
 from tqdm.auto import tqdm
 from transformers import CLIPFeatureExtractor, CLIPTextModel, CLIPTokenizer, PreTrainedTokenizer
 
@@ -119,6 +123,9 @@ def parse_args():
     )
     parser.add_argument(
         "--initialize_rest_random", action="store_true", help="Initialize rest of the placeholder tokens with random."
+    )
+    parser.add_argument(
+        "--cache_images", action="store_true", help="Cache tensors of every image we load. You should only do this if your training set is small."
     )
     parser.add_argument(
         "--save_steps",
@@ -341,8 +348,13 @@ imagenet_style_templates_small = [
     "a large painting in the style of {}",
 ]
 
+@dataclass
+class Variations:
+    original: Tensor
+    flipped: Tensor
 
 class TextualInversionDataset(Dataset):
+    cache: Dict[str, Variations]
     def __init__(
         self,
         data_root,
@@ -350,11 +362,12 @@ class TextualInversionDataset(Dataset):
         learnable_property="object",  # [object, style]
         size=512,
         repeats=100,
-        interpolation="bicubic",
+        interpolation="lanczos",
         flip_p=0.5,
         set="train",
         placeholder_token="*",
         center_crop=False,
+        cache_enabled=False,
     ):
         self.data_root = data_root
         self.tokenizer = tokenizer
@@ -364,7 +377,10 @@ class TextualInversionDataset(Dataset):
         self.center_crop = center_crop
         self.flip_p = flip_p
 
-        self.image_paths = [os.path.join(self.data_root, file_path) for file_path in os.listdir(self.data_root)]
+        self.image_paths = [
+            os.path.join(self.data_root, file_path)
+            for file_path in os.listdir(self.data_root) if file_path.endswith('.png') or file_path.endswith('.jpg')
+        ]
 
         self.num_images = len(self.image_paths)
         self._length = self.num_images
@@ -380,20 +396,74 @@ class TextualInversionDataset(Dataset):
         }[interpolation]
 
         self.templates = imagenet_style_templates_small if learnable_property == "style" else imagenet_templates_small
-        self.flip_transform = transforms.RandomHorizontalFlip(p=self.flip_p)
+        # we have so few images and so much VRAM that we should prefer to retain tensors rather than redo work
+        self.cache = {}
+        self.cache_enabled = cache_enabled
 
     def __len__(self):
         return self._length
 
     def __getitem__(self, i):
         example = {}
-        image = Image.open(self.image_paths[i % self.num_images])
-
-        if not image.mode == "RGB":
-            image = image.convert("RGB")
+        image_path: str = self.image_paths[i % self.num_images]
+        stem: str = Path(image_path).stem
 
         placeholder_string = self.placeholder_token
-        text = random.choice(self.templates).format(placeholder_string)
+        # text = random.choice(self.templates).format(placeholder_string)
+        def describe_placeholder() -> str:
+            if random() < 0.3:
+                return self.placeholder_token
+            return placeholder_string
+
+        def describe_subject(character: str) -> str:
+            placeholder: str = describe_placeholder()
+            if random() < 0.3:
+                return f"photo of {placeholder}"
+            return f"photo of {character} {placeholder}"
+
+        def make_prompt(character: str, general_labels: List[str], sitting=True, on_floor=True) -> str:
+            even_more_labels = [*general_labels, '1girl']
+            if sitting:
+                even_more_labels.append('sitting')
+            if on_floor:
+                even_more_labels.append('on floor')
+            subject: str = describe_subject(character)
+            # we can use this for dropout but I think dropout is undesirable
+            # label_count = randrange(0, len(even_more_labels))
+            label_count = len(even_more_labels)
+            if label_count == 0:
+                return subject
+            labels = sample(even_more_labels, label_count)
+            joined = ', '.join(labels)
+            return f"{subject} with {joined}"
+
+        match stem:
+            case 'koishi':
+                text = make_prompt('komeiji koishi', ['green hair', 'black footwear', 'medium hair', 'blue eyes', 'yellow jacket', 'green skirt' 'hat', 'black headwear', 'smile', 'touhou project'])
+            case 'flandre':
+                text = make_prompt('flandre scarlet', ['fang', 'red footwear', 'slit pupils', 'medium hair', 'blonde hair', 'red eyes', 'red dress', 'mob cap', 'smile', 'short sleeves', 'yellow ascot', 'touhou project'])
+            case 'sanae':
+                text = make_prompt('kochiya sanae', ['green hair', 'blue footwear', 'long hair', 'green eyes', 'white dress', 'blue skirt', 'frog hair ornament', 'snake hair ornament', 'smile', 'standing', 'touhou project'])
+            case 'sanaestand':
+                text = make_prompt('kochiya sanae', ['green hair', 'blue footwear', 'long hair', 'green eyes', 'white dress', 'blue skirt', 'frog hair ornament', 'snake hair ornament', 'smile', 'touhou project'], sitting=False)
+            case 'tenshi':
+                text = make_prompt('hinanawi tenshi', ['blue hair', 'brown footwear', 'slit pupils', 'very long hair', 'red eyes', 'white dress', 'blue skirt', 'hat', 'black headwear', 'smile', 'touhou project'])
+            case 'youmu':
+                text = make_prompt('konpaku youmu', ['silver hair', 'black footwear', 'medium hair', 'slit pupils', 'green eyes', 'green dress', 'sleeveless dress', 'white sleeves', 'black ribbon', 'hair ribbon', 'unhappy', 'touhou project'])
+            case 'yuyuko':
+                text = make_prompt('saigyouji yuyuko', ['pink hair', 'black footwear', 'medium hair', 'pink eyes', 'wide sleeves', 'long sleeves', 'blue dress', 'mob cap', 'touhou project'])
+            case 'nagisa':
+                text = make_prompt('furukawa nagisa', ['brown hair', 'brown footwear', 'medium hair', 'brown eyes', 'smile', 'school briefcase', 'blue skirt', 'yellow jacket', 'antenna hair', 'dango', 'clannad'])
+            case 'teto':
+                text = make_prompt('kasane teto', ['pink hair', 'red footwear', 'red eyes', 'medium hair', 'detached sleeves', 'twin drills', 'drill hair', 'grey dress', 'smile', 'vocaloid'])
+            case 'korone':
+                text = make_prompt('inugami korone', ['yellow jacket', 'blue footwear', 'long hair', 'white dress', 'brown hair', 'brown eyes', 'on chair', 'hairclip', 'uwu', 'hololive'], on_floor=False)
+            case 'kudo':
+                text = make_prompt('kudryavka noumi', ['fang', 'black footwear', 'very long hair', 'white hat', 'white cape', 'silver hair', 'grey skirt', 'blue eyes', 'smile', 'little busters!'])
+            case 'patchouli':
+                text = make_prompt('patchouli knowledge', ['mob cap', 'pink footwear', 'long hair', 'slit pupils', 'striped dress', 'pink dress', 'purple hair', 'ribbons in hair', 'unhappy', 'touhou project'])
+            case _:
+                text = f"photo of {placeholder_string}"
 
         example["input_ids"] = self.tokenizer(
             text,
@@ -403,25 +473,44 @@ class TextualInversionDataset(Dataset):
             return_tensors="pt",
         ).input_ids[0]
 
-        # default to score-sde preprocessing
-        img = np.array(image).astype(np.uint8)
+        if stem not in self.cache:
+            image = Image.open(image_path)
+            if not image.mode == "RGB":
+                image = image.convert("RGB")
 
-        if self.center_crop:
-            crop = min(img.shape[0], img.shape[1])
-            h, w, = (
-                img.shape[0],
-                img.shape[1],
+            # default to score-sde preprocessing
+            img = np.array(image).astype(np.uint8)
+
+            if self.center_crop:
+                crop = min(img.shape[0], img.shape[1])
+                h, w, = (
+                    img.shape[0],
+                    img.shape[1],
+                )
+                img = img[(h - crop) // 2 : (h + crop) // 2, (w - crop) // 2 : (w + crop) // 2]
+
+            image: Img = Image.fromarray(img)
+            image: Img = image.resize((self.size, self.size), resample=self.interpolation)
+
+            flipped: Img = hflip(image)
+
+            def pil_to_latents(image: Img) -> Tensor:
+                image = np.array(image).astype(np.uint8)
+                image = (image / 127.5 - 1.0).astype(np.float32)
+                latents: Tensor = torch.from_numpy(image).permute(2, 0, 1)
+                return latents
+
+            image, flipped = (pil_to_latents(variation) for variation in (image, flipped))
+            
+            self.cache[stem] = Variations(
+                original=image,
+                flipped=flipped,
             )
-            img = img[(h - crop) // 2 : (h + crop) // 2, (w - crop) // 2 : (w + crop) // 2]
+        variations = self.cache[stem]
+        flip = torch.rand(1) < self.flip_p
+        image = variations.flipped if flip else variations.original
 
-        image = Image.fromarray(img)
-        image = image.resize((self.size, self.size), resample=self.interpolation)
-
-        image = self.flip_transform(image)
-        image = np.array(image).astype(np.uint8)
-        image = (image / 127.5 - 1.0).astype(np.float32)
-
-        example["pixel_values"] = torch.from_numpy(image).permute(2, 0, 1)
+        example["pixel_values"] = image
         return example
 
 
