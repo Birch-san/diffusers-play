@@ -32,8 +32,10 @@
       "name": "Python: Textual Inversion",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/ti_train.py",
+      // "program": "${workspaceFolder}/scripts/ti_train.py",
+      "module": "accelerate.commands.launch",
       "args": [
+        "${workspaceFolder}/scripts/ti_train.py",
         "--num_vec_per_token",
         "6",
         "--initialize_rest_random",
