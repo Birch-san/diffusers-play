@@ -141,7 +141,8 @@ prompts = [*unprompts, prompt]
 
 sample_path='out'
 intermediates_path='intermediates'
-for path_ in [sample_path, intermediates_path]:
+pt_path='pt'
+for path_ in [sample_path, intermediates_path, pt_path]:
   os.makedirs(path_, exist_ok=True)
 log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 
@@ -183,6 +184,9 @@ with no_grad():
       # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
       # callback=log_intermediates,
     ).to(vae_dtype)
+    base_count = len(os.listdir(pt_path))
+    for ix, latents_ in enumerate(latents):
+      torch.save(latents_, os.path.join(pt_path, f"{base_count+ix:05}.{seed}.pt"))
     pil_images: List[Image.Image] = latents_to_pils(latents)
     print(f'generated {batch_size} images in {time.perf_counter()-tic} seconds')
 
