@@ -2,12 +2,14 @@ import os
 
 # monkey-patch _randn to use CPU random before k-diffusion uses it
 from helpers.brownian_tree_mps_fix import reassuring_message
+from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.cfg_denoiser import Denoiser, DenoiserFactory
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 print(reassuring_message) # avoid "unused" import :P
+print(reassuring_message_2)
 
 import torch
 from torch import Generator, Tensor, randn, no_grad, argmin, zeros
