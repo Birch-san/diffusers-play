@@ -12,8 +12,9 @@ print(reassuring_message) # avoid "unused" import :P
 print(reassuring_message_2)
 
 import torch
-from torch import Generator, Tensor, randn, no_grad, argmin, zeros
+from torch import Generator, Tensor, randn, no_grad, argmin, zeros, nn
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
+from diffusers.models.cross_attention import CrossAttention
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
@@ -76,6 +77,12 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
   upcast_attention=upcast_attention,
 ).to(device).eval()
+
+def fuse_qkv_proj(module: nn.Module) -> None:
+  for m in module.children():
+    if isinstance(m, CrossAttention):
+      m.fuse_qkv_proj()
+unet.apply(fuse_qkv_proj)
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
