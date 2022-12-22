@@ -15,6 +15,8 @@ import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import Tensor
 from torch.utils.data import Dataset
+from helpers.cumsum_mps_fix import reassuring_message
+print(reassuring_message) # avoid "unused" import :P
 
 import PIL
 from PIL.Image import Image as Img
