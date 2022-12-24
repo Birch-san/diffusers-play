@@ -19,7 +19,8 @@ from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sa
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
-from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
+from helpers.embed_text_types import Embed
+from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 
 from typing import List
 from PIL import Image

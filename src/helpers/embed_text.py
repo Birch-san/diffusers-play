@@ -1,13 +1,10 @@
 import torch
-from typing import Callable, Union, Iterable
-from typing_extensions import TypeAlias
 from torch import Tensor, LongTensor, no_grad
 from enum import Enum, auto
 from .log_level import log_level
 from .device import DeviceType
-
-Prompts: TypeAlias = Union[str, Iterable[str]]
-Embed: TypeAlias = Callable[[Prompts], Tensor]
+from .embed_text_types import Prompts, Embed
+from .clip_embed_text import get_embedder as get_clip_embedder
 
 class ClipImplementation(Enum):
   HF = auto()
@@ -28,8 +25,6 @@ def get_embedder(
   match(impl):
     case ClipImplementation.HF:
       from transformers import CLIPTextModel, PreTrainedTokenizer, CLIPTokenizer, logging
-      from transformers.modeling_outputs import BaseModelOutputWithPooling
-      from transformers.tokenization_utils_base import BatchEncoding
       match(ckpt):
         case ClipCheckpoint.OpenAI:
           model_name = 'openai/clip-vit-large-patch14'
@@ -46,19 +41,11 @@ def get_embedder(
       with log_level(logging.ERROR):
         text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, **encoder_extra_args).to(device).eval()
       
-      def embed(prompts: Prompts) -> Tensor:
-        tokens: BatchEncoding = tokenizer(prompts, padding="max_length", max_length=tokenizer.model_max_length, return_tensors="pt")
-        text_input_ids: Tensor = tokens.input_ids
-        with no_grad():
-          encoder_outputs: BaseModelOutputWithPooling = text_encoder.forward(
-            text_input_ids.to(device),
-            output_hidden_states=subtract_hidden_state_layers != 0,
-            return_dict=True
-          )
-          text_embeddings: Tensor = encoder_outputs.last_hidden_state if subtract_hidden_state_layers == 0 else (
-            text_encoder.text_model.final_layer_norm.forward(encoder_outputs.hidden_states[-1 - subtract_hidden_state_layers])
-          )
-        return text_embeddings
+      embed: Embed = get_clip_embedder(
+        tokenizer=tokenizer,
+        text_encoder=text_encoder,
+        subtract_hidden_state_layers=subtract_hidden_state_layers,
+      )
       return embed
     case ClipImplementation.OpenCLIP:
       # this doesn't seem to get same result as HF implementation, but it does give a result that matches the prompt. maybe I goofed somewhere.
