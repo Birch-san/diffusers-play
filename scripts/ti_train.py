@@ -5,7 +5,7 @@ import math
 import os
 import random
 from pathlib import Path
-from typing import Optional, Dict, NamedTuple, List
+from typing import Optional, Dict, NamedTuple, List, Callable
 from argparse import Namespace
 from random import sample, random
 
@@ -29,6 +29,10 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionSafetyChecker
 from diffusers.utils import check_min_version
 from diffusers.utils.import_utils import is_xformers_available
 from huggingface_hub import HfFolder, Repository, whoami
+
+from k_diffusion.sampling import get_sigmas_karras
+from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
+from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, get_sigmas, get_log_sigmas, log_sigmas_to_t
 
 # TODO: remove and import from diffusers.utils when the new version of diffusers is released
 from packaging import version
@@ -722,6 +726,32 @@ def main():
     # keep original embeddings as reference
     orig_embeds_params = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight.data.clone()
 
+    alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=accelerator.device)))
+    model_sigmas: Tensor = get_sigmas(alphas_cumprod)
+    model_log_sigmas: Tensor = get_log_sigmas(model_sigmas)
+    model_sigma_min: Tensor = model_sigmas[0]
+    model_sigma_max: Tensor = model_sigmas[-1]
+
+    schedule_params_to_sigmas: Callable[[KarrasScheduleParams], Tensor] = lambda schedule: get_sigmas_karras(
+        n=schedule.steps,
+        sigma_max=schedule.sigma_max,
+        sigma_min=schedule.sigma_min,
+        rho=schedule.rho,
+        device=model_sigmas.device,
+    )
+
+    # rather than training denoising on *random* timesteps: let's train on *only* the timesteps I'm planning to use
+    # train it on two schedules: one for quick drafts, another for mastering
+    searching_sigmas, mastering_sigmas = (schedule_params_to_sigmas(get_template_schedule(
+        template=template,
+        model_sigma_min=model_sigma_min,
+        model_sigma_max=model_sigma_max,
+        device=model_sigmas.device,
+        dtype=model_sigmas.dtype,
+    )) for template in (KarrasScheduleTemplate.Searching, KarrasScheduleTemplate.Mastering))
+    searching_timesteps, mastering_timesteps = (log_sigmas_to_t(get_log_sigmas(sigmas[:-1]), model_log_sigmas) for sigmas in (searching_sigmas, mastering_sigmas))
+    favourite_timesteps = torch.cat([searching_timesteps, mastering_timesteps]).unique()
+
     for epoch in range(first_epoch, args.num_train_epochs):
         text_encoder.train()
         for step, batch in enumerate(train_dataloader):
@@ -740,9 +770,10 @@ def main():
                 noise = torch.randn(latents.shape).to(latents.device).to(dtype=weight_dtype)
                 bsz = latents.shape[0]
                 # Sample a random timestep for each image
-                timesteps = torch.randint(
-                    0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device
-                ).long()
+                # timesteps = torch.randint(
+                #     0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device
+                # ).long()
+                timesteps = favourite_timesteps.index_select(0, torch.randint(0, favourite_timesteps.size(0), (bsz,), device=favourite_timesteps.device))
 
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
