@@ -48,7 +48,9 @@
         "--train_data_dir",
         "/Users/birch/plush/512_ti",
         "--only_save_embeds",
-        "--cache_images"
+        "--cache_images",
+        "--train_batch_size",
+        "2"
       ],
       "console": "integratedTerminal",
       "justMyCode": true,
