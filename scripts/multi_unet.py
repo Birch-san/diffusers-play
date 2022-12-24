@@ -6,7 +6,7 @@ from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.multi_unet_denoiser import MultiUnetCFGDenoiser, GetModelWeight, static_model_weight
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
-from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
+from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
@@ -14,7 +14,7 @@ from k_diffusion.external import DiscreteSchedule
 from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m
 
 import torch
-from torch import Generator, Tensor, randn, no_grad, argmin, zeros
+from torch import Generator, Tensor, randn, no_grad, zeros
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 
 from dataclasses import dataclass
@@ -162,7 +162,13 @@ schedule_template = KarrasScheduleTemplate.Mastering
 # grab any of our k-diffusion wrapped denoisers; get_template_schedule() refers to its .sigmas property
 # they should all be the same
 unet_k_wrapped: DiscreteSchedule = denoisers[ModelId.WD]
-schedule: KarrasScheduleParams = get_template_schedule(schedule_template, unet_k_wrapped)
+schedule: KarrasScheduleParams = get_template_schedule(
+  schedule_template,
+  model_sigma_min=unet_k_wrapped.sigma_min,
+  model_sigma_max=unet_k_wrapped.sigma_max,
+  device=unet_k_wrapped.sigmas.device,
+  dtype=unet_k_wrapped.sigmas.dtype,
+)
 steps, sigma_max, sigma_min, rho = schedule.steps, schedule.sigma_max, schedule.sigma_min, schedule.rho
 sigmas: Tensor = get_sigmas_karras(
   n=steps,
@@ -172,7 +178,7 @@ sigmas: Tensor = get_sigmas_karras(
   device=device,
 ).to(unet_dtype)
 sigmas_quantized = torch.cat([
-  unet_k_wrapped.sigmas[argmin((sigmas[:-1].unsqueeze(1).expand(-1, unet_k_wrapped.sigmas.size(0)) - unet_k_wrapped.sigmas).abs(), dim=1)],
+  quantize_to(sigmas[:-1], unet_k_wrapped.sigmas),
   zeros((1), device=sigmas.device, dtype=sigmas.dtype)
 ])
 print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")

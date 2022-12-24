@@ -1,5 +1,5 @@
 import torch
-from torch import Tensor, cumprod, linspace
+from torch import Tensor, cumprod, linspace, argmin
 from typing import Optional
 from .device import DeviceType
 
@@ -17,3 +17,9 @@ def get_alphas(betas: Tensor) -> Tensor:
 
 def get_alphas_cumprod(alphas: Tensor) -> Tensor:
   return cumprod(alphas, dim=0)
+
+def get_sigmas(alphas_cumprod: Tensor) -> Tensor:
+  return ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
+
+def quantize_to(proposed: Tensor, quanta: Tensor) -> Tensor:
+  return quanta[argmin((proposed.unsqueeze(1).expand(-1, quanta.size(0)) - quanta).abs(), dim=1)]

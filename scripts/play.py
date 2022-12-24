@@ -12,11 +12,11 @@ print(reassuring_message) # avoid "unused" import :P
 print(reassuring_message_2)
 
 import torch
-from torch import Generator, Tensor, randn, no_grad, argmin, zeros
+from torch import Generator, Tensor, randn, no_grad, zeros
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
-from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas
+from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, Embed, get_embedder
@@ -118,7 +118,13 @@ embed: Embed = get_embedder(
 )
 
 schedule_template = KarrasScheduleTemplate.Mastering
-schedule: KarrasScheduleParams = get_template_schedule(schedule_template, unet_k_wrapped)
+schedule: KarrasScheduleParams = get_template_schedule(
+  schedule_template,
+  model_sigma_min=unet_k_wrapped.sigma_min,
+  model_sigma_max=unet_k_wrapped.sigma_max,
+  device=unet_k_wrapped.sigmas.device,
+  dtype=unet_k_wrapped.sigmas.dtype,
+)
 
 steps, sigma_max, sigma_min, rho = schedule.steps, schedule.sigma_max, schedule.sigma_min, schedule.rho
 sigmas: Tensor = get_sigmas_karras(
@@ -129,7 +135,7 @@ sigmas: Tensor = get_sigmas_karras(
   device=device,
 ).to(sampling_dtype)
 sigmas_quantized = torch.cat([
-  unet_k_wrapped.sigmas[argmin((sigmas[:-1].unsqueeze(1).expand(-1, unet_k_wrapped.sigmas.size(0)) - unet_k_wrapped.sigmas).abs(), dim=1)],
+  quantize_to(sigmas[:-1], unet_k_wrapped.sigmas),
   zeros((1), device=sigmas.device, dtype=sigmas.dtype)
 ])
 print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
