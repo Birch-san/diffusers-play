@@ -21,5 +21,12 @@ def get_alphas_cumprod(alphas: Tensor) -> Tensor:
 def get_sigmas(alphas_cumprod: Tensor) -> Tensor:
   return ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
 
+def get_log_sigmas(sigmas: Tensor) -> Tensor:
+  return sigmas.log()
+
 def quantize_to(proposed: Tensor, quanta: Tensor) -> Tensor:
   return quanta[argmin((proposed.unsqueeze(1).expand(-1, quanta.size(0)) - quanta).abs(), dim=1)]
+
+def log_sigmas_to_t(proposed_log_sigmas: Tensor, log_sigma_quanta: Tensor) -> Tensor:
+  """Quantized sigmas only, please"""
+  return (proposed_log_sigmas-log_sigma_quanta.unsqueeze(1)).abs().argmin(dim=0)
