@@ -21,6 +21,7 @@ from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
 from helpers.embed_text_types import Embed
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
+from helpers.model_db import get_model_needs, ModelNeeds
 
 from typing import List
 from PIL import Image
@@ -53,22 +54,13 @@ model_name = (
   # 'stabilityai/stable-diffusion-2-1-base'
 )
 
-sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
-sd2_base_models = { 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
-sd2_models = { *sd2_768_models, *sd2_base_models }
-# models where if you use 16-bit computation in the Unet: you will get NaN latents. prefer to run attention in 32-bit
-upcast_attention_models = { 'stabilityai/stable-diffusion-2-1' }
+model_needs: ModelNeeds = get_model_needs(model_name, torch.float32 if torch_dtype is None else torch_dtype)
 
-laion_embed_models = { *sd2_models }
-_768_models = { *sd2_768_models }
-vparam_models = { *sd2_768_models }
-penultimate_clip_hidden_state_models = { *sd2_models }
-
-needs_laion_embed = model_name in laion_embed_models
-is_768 = model_name in _768_models
-needs_vparam = model_name in vparam_models
-needs_penultimate_clip_hidden_state = model_name in penultimate_clip_hidden_state_models
-upcast_attention = torch_dtype is torch.float16 and model_name in upcast_attention_models
+needs_laion_embed = model_needs.needs_laion_embed
+is_768 = model_needs.is_768
+needs_vparam = model_needs.needs_vparam
+needs_penultimate_clip_hidden_state = model_needs.needs_penultimate_clip_hidden_state
+upcast_attention = model_needs.needs_upcast_attention
 
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
