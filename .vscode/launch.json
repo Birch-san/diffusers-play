@@ -53,9 +53,9 @@
         "2"
       ],
       "console": "integratedTerminal",
-      "justMyCode": true,
+      "justMyCode": false,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
+        "PYTHONPATH": "/Users/birch/git/pytorch:${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
         "PYTORCH_ENABLE_MPS_FALLBACK": "1",
       }
     },
