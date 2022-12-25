@@ -13,8 +13,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
-from torch import Tensor
+from torch import Tensor, Generator, randn
 from torch.utils.data import Dataset
+from torch.utils.tensorboard.writer import SummaryWriter
 from helpers.cumsum_mps_fix import reassuring_message
 print(reassuring_message) # avoid "unused" import :P
 
@@ -30,9 +31,16 @@ from diffusers.utils import check_min_version
 from diffusers.utils.import_utils import is_xformers_available
 from huggingface_hub import HfFolder, Repository, whoami
 
-from k_diffusion.sampling import get_sigmas_karras
+from k_diffusion.sampling import get_sigmas_karras, sample_dpmpp_2m
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, get_sigmas, get_log_sigmas, log_sigmas_to_t
+from helpers.model_db import get_model_needs, ModelNeeds
+from helpers.embed_text_types import Embed
+from helpers.clip_embed_text import get_embedder
+from helpers.diffusers_denoiser import DiffusersSD2Denoiser, DiffusersSDDenoiser
+from helpers.cfg_denoiser import Denoiser, DenoiserFactory
+from helpers.latents_to_pils import LatentsToBCHW, make_latents_to_bchw
+from helpers.get_seed import get_seed
 
 # TODO: remove and import from diffusers.utils when the new version of diffusers is released
 from packaging import version
@@ -132,6 +140,24 @@ def parse_args():
     )
     parser.add_argument(
         "--cache_images", action="store_true", help="Cache tensors of every image we load. You should only do this if your training set is small."
+    )
+    parser.add_argument(
+        "--visualization_steps",
+        type=int,
+        default=100,
+        help="Log image every X updates steps.",
+    )
+    parser.add_argument(
+        "--visualization_train_samples",
+        type=int,
+        default=2,
+        help="How many samples (using prompts from training set) to output when visualizing.",
+    )
+    parser.add_argument(
+        "--visualization_test_samples",
+        type=int,
+        default=2,
+        help="How many samples (using unseen prompts) to output when visualizing.",
     )
     parser.add_argument(
         "--save_steps",
@@ -517,6 +543,7 @@ class TextualInversionDataset(Dataset):
         image = variations.flipped if flip else variations.original
 
         example["pixel_values"] = image
+        example["prompt"] = text
         return example
 
 
@@ -726,8 +753,9 @@ def main():
     # keep original embeddings as reference
     orig_embeds_params = accelerator.unwrap_model(text_encoder).get_input_embeddings().weight.data.clone()
 
+    sampling_dtype = torch.float32
     alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=accelerator.device)))
-    model_sigmas: Tensor = get_sigmas(alphas_cumprod)
+    model_sigmas: Tensor = get_sigmas(alphas_cumprod).to(sampling_dtype)
     model_log_sigmas: Tensor = get_log_sigmas(model_sigmas)
     model_sigma_min: Tensor = model_sigmas[0]
     model_sigma_max: Tensor = model_sigmas[-1]
@@ -751,6 +779,33 @@ def main():
     )) for template in (KarrasScheduleTemplate.Searching, KarrasScheduleTemplate.Mastering))
     searching_timesteps, mastering_timesteps = (log_sigmas_to_t(get_log_sigmas(sigmas[:-1]), model_log_sigmas) for sigmas in (searching_sigmas, mastering_sigmas))
     favourite_timesteps = torch.cat([searching_timesteps, mastering_timesteps]).unique()
+
+    test_prompts = [
+        f'photo of {placeholder_token}',
+        f'photo of hatsune miku {placeholder_token}',
+        f'photo of hakurei reimu {placeholder_token}',
+        f'photo of aynami rei {placeholder_token}, evangelion',
+        f'photo of asuka langley {placeholder_token}, evangelion',
+        f'photo of steins;gate mayuri {placeholder_token}',
+        f'photo of spice and wolf holo {placeholder_token}',
+        f'photo of rin fate {placeholder_token}',
+        f'photo of ruby rwby {placeholder_token}',
+        f'photo of weiss rwby {placeholder_token}',
+        f'photo of yang rwby {placeholder_token}',
+        f'photo of blake rwby {placeholder_token}',
+        f'photo of saber anime fate {placeholder_token}',
+        f'photo of nero anime fate {placeholder_token}',
+    ]
+    model_needs: ModelNeeds = get_model_needs(args.pretrained_model_name_or_path, unet.dtype)
+    unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if model_needs.needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
+    denoiser_factory = DenoiserFactory(unet_k_wrapped)
+    latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
+
+    batch_size = 1
+    num_images_per_prompt = 1
+    width = 768 if model_needs.is_768 else 512
+    height = width
+    latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 
     for epoch in range(first_epoch, args.num_train_epochs):
         text_encoder.train()
@@ -824,6 +879,37 @@ def main():
             logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
+            
+            if global_step % args.visualization_steps == 0:
+                if accelerator.is_main_process:
+                    with torch.no_grad():
+                        embed: Embed = get_embedder(
+                            tokenizer,
+                            accelerator.unwrap_model(text_encoder),
+                            subtract_hidden_state_layers=int(model_needs.needs_penultimate_clip_hidden_state)
+                        )
+                        tracker: SummaryWriter = accelerator.get_tracker("tensorboard")
+
+                        sampled_train_prompts = sample(batch['prompt'], min(args.visualization_train_samples, args.train_batch_size))
+                        sampled_test_prompts = sample(test_prompts, min(args.visualization_test_samples, len(test_prompts)))
+
+                        for sampled_prompts, provenance in zip([sampled_train_prompts, sampled_test_prompts], ['train', 'test']):
+                            embeds: Tensor = embed(['', *sampled_prompts])
+                            uc, *cs = embeds.split(1)
+
+                            for prompt, c in zip(sampled_prompts, cs):
+                                denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=7.5)
+                                seed = get_seed()
+                                generator = Generator(device='cpu').manual_seed(seed)
+                                latents = randn(latents_shape, generator=generator, device='cpu', dtype=sampling_dtype).to(denoiser.denoiser.inner_model.device)
+                                latents: Tensor = sample_dpmpp_2m(
+                                    denoiser,
+                                    latents * searching_sigmas[0],
+                                    searching_sigmas,
+                                ).to(vae.dtype)
+                                bchw: Tensor = latents_to_bchw(latents)
+                                chw, *_ = bchw
+                                tracker.add_image('[%s][%d] %s' % (provenance, seed, prompt.replace(placeholder_token, '*')), np.asarray(chw.cpu()), global_step)
 
             if global_step >= args.max_train_steps:
                 break
