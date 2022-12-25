@@ -18,7 +18,7 @@ from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sa
 
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
-from helpers.latents_to_pils import LatentsToPils, make_latents_to_pils
+from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw
 from helpers.embed_text_types import Embed
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds
@@ -97,7 +97,8 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
   revision=vae_revision,
   torch_dtype=vae_dtype,
 ).to(device).eval()
-latents_to_pils: LatentsToPils = make_latents_to_pils(vae)
+latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
+latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 
 clip_impl = ClipImplementation.HF
 clip_ckpt = ClipCheckpoint.LAION if needs_laion_embed else ClipCheckpoint.OpenAI
