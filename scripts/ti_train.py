@@ -494,6 +494,8 @@ class TextualInversionDataset(Dataset):
                 text = make_prompt('kudryavka noumi', ['fang', 'black footwear', 'very long hair', 'white hat', 'white cape', 'silver hair', 'grey skirt', 'blue eyes', 'smile', 'little busters!'])
             case 'patchouli':
                 text = make_prompt('patchouli knowledge', ['mob cap', 'pink footwear', 'long hair', 'slit pupils', 'striped dress', 'pink dress', 'purple hair', 'ribbons in hair', 'unhappy', 'touhou project'])
+            case 'marisa':
+                text = make_prompt('kirisame marisa', ['witch hat', 'black footwear', 'long hair', 'black dress', 'yellow eyes', 'blonde hair', 'white ribbon', 'smile', 'touhou project', 'puffy short sleeves', 'white shirt', 'buttons', 'white apron', 'bare legs', 'bare arms', 'braid', 'side braid', 'single braid', 'black headwear'])
             case _:
                 text = f"photo of {placeholder_string}"
 
