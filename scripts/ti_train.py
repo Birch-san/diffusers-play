@@ -398,6 +398,7 @@ class TextualInversionDataset(Dataset):
         flip_p=0.5,
         set="train",
         placeholder_token="*",
+        coarse_class_text='plush',
         center_crop=False,
         cache_enabled=False,
     ):
@@ -408,6 +409,8 @@ class TextualInversionDataset(Dataset):
         self.placeholder_token = placeholder_token
         self.center_crop = center_crop
         self.flip_p = flip_p
+
+        self.coarse_class_text = coarse_class_text
 
         self.image_paths = [
             os.path.join(self.data_root, file_path)
@@ -441,7 +444,11 @@ class TextualInversionDataset(Dataset):
         stem: str = Path(image_path).stem
 
         placeholder_string = self.placeholder_token
-        # text = random.choice(self.templates).format(placeholder_string)
+        if self.coarse_class_text:
+            placeholder_string = (
+                f'{placeholder_string} {self.coarse_class_text}'
+            )
+
         def describe_placeholder() -> str:
             if random() < 0.3:
                 return self.placeholder_token
@@ -782,21 +789,23 @@ def main():
     searching_timesteps, mastering_timesteps = (log_sigmas_to_t(get_log_sigmas(sigmas[:-1]), model_log_sigmas) for sigmas in (searching_sigmas, mastering_sigmas))
     favourite_timesteps = torch.cat([searching_timesteps, mastering_timesteps]).unique()
 
+    coarse_class = 'plush'
+    placeholder_string = f'{placeholder_token} {coarse_class}'
     test_prompts = [
-        f'photo of {placeholder_token}',
-        f'photo of hatsune miku {placeholder_token}',
-        f'photo of hakurei reimu {placeholder_token}',
-        f'photo of aynami rei {placeholder_token}, evangelion',
-        f'photo of asuka langley {placeholder_token}, evangelion',
-        f'photo of steins;gate mayuri {placeholder_token}',
-        f'photo of spice and wolf holo {placeholder_token}',
-        f'photo of rin fate {placeholder_token}',
-        f'photo of ruby rwby {placeholder_token}',
-        f'photo of weiss rwby {placeholder_token}',
-        f'photo of yang rwby {placeholder_token}',
-        f'photo of blake rwby {placeholder_token}',
-        f'photo of saber anime fate {placeholder_token}',
-        f'photo of nero anime fate {placeholder_token}',
+        f'photo of {placeholder_string}',
+        f'photo of hatsune miku {placeholder_string}',
+        f'photo of hakurei reimu {placeholder_string}',
+        f'photo of ayanami rei {placeholder_string}, evangelion',
+        f'photo of asuka langley {placeholder_string}, evangelion',
+        f'photo of steins;gate mayuri {placeholder_string}',
+        f'photo of spice and wolf holo {placeholder_string}',
+        f'photo of rin fate {placeholder_string}',
+        f'photo of ruby rwby {placeholder_string}',
+        f'photo of weiss rwby {placeholder_string}',
+        f'photo of yang rwby {placeholder_string}',
+        f'photo of blake rwby {placeholder_string}',
+        f'photo of saber anime fate {placeholder_string}',
+        f'photo of nero anime fate {placeholder_string}',
     ]
     model_needs: ModelNeeds = get_model_needs(args.pretrained_model_name_or_path, unet.dtype)
     unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if model_needs.needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
