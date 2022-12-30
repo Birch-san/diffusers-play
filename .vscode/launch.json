@@ -102,6 +102,18 @@
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
         "PYTORCH_ENABLE_MPS_FALLBACK": "1",
       }
+    },
+    {
+      "name": "Python: Study",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/study2.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "/Users/birch/git/pytorch:${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
+        "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+      }
     }
   ]
 }
