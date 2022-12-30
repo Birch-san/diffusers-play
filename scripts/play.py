@@ -15,6 +15,7 @@ import torch
 from torch import Generator, Tensor, randn, no_grad, zeros, nn
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.models.cross_attention import CrossAttention
+from diffusers.models.attention import AttentionBlock
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
@@ -74,7 +75,12 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 def subquad_attn(module: nn.Module) -> None:
   for m in module.children():
     if isinstance(m, CrossAttention):
-      m.set_subquadratic_attention(query_chunk_size=1024, kv_chunk_size=4096)
+      m.set_subquadratic_attention(
+        query_chunk_size=1024,
+        # kv_chunk_size=4096,
+        kv_chunk_size_min=4096,
+        # chunk_threshold_bytes=2*1024**3,
+      )
 unet.apply(subquad_attn)
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
@@ -104,6 +110,50 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
   revision=vae_revision,
   torch_dtype=vae_dtype,
 ).to(device).eval()
+
+class VAECrossAttn(CrossAttention):
+  rescale_output_factor: float
+  def __init__(
+    self,
+    rescale_output_factor: int,
+    *args,
+    **kwargs):
+    super().__init__(*args, **kwargs)
+    self.rescale_output_factor = rescale_output_factor
+  def forward(self, hidden_states: Tensor, *args, **kwargs):
+    residual = hidden_states
+    *_, height, width = hidden_states.shape
+    hidden_states = hidden_states.flatten(-2).transpose(1, 2)
+    hidden_states = super().forward(hidden_states, *args, **kwargs)
+    hidden_states = hidden_states.transpose(-1, -2).unflatten(-1, (height, width))
+    hidden_states = hidden_states + residual
+    del residual
+    hidden_states = hidden_states / self.rescale_output_factor
+    return hidden_states
+
+def to_vae_cattn(m: AttentionBlock) -> VAECrossAttn:
+  cross_attn = VAECrossAttn(
+    m.rescale_output_factor,
+    m.channels,
+    dim_head=m.channels if m.num_head_size is None else m.num_head_size,
+    heads=1 if m.num_head_size is None else m.channels // m.num_head_size,
+    norm_num_groups=m.group_norm.num_groups,
+  ).eval()
+  cross_attn.group_norm.eps=m.group_norm.eps
+  cross_attn.to_q = m.query
+  cross_attn.to_k = m.key
+  cross_attn.to_v = m.value
+  cross_attn.to_out[0] = m.proj_attn
+  return cross_attn
+
+def replace_attn(module: nn.Module) -> None:
+  for name, m in module.named_children():
+    if isinstance(m, AttentionBlock):
+      cross_attn: VAECrossAttn = to_vae_cattn(m)
+      setattr(module, name, cross_attn)
+vae.apply(replace_attn)
+vae.apply(subquad_attn)
+
 latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 
