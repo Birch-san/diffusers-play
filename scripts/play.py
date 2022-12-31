@@ -56,12 +56,13 @@ model_name = (
 
 model_needs: ModelNeeds = get_model_needs(model_name, torch.float32 if torch_dtype is None else torch_dtype)
 
-needs_laion_embed = model_needs.needs_laion_embed
 is_768 = model_needs.is_768
 needs_vparam = model_needs.needs_vparam
 needs_penultimate_clip_hidden_state = model_needs.needs_penultimate_clip_hidden_state
 upcast_attention = model_needs.needs_upcast_attention
 
+# WD 1.4 hasn't uploaded an fp16 revision yet
+revision = None if model_name == 'hakurei/waifu-diffusion' else revision
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
@@ -77,22 +78,14 @@ alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))
 unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
 denoiser_factory = DenoiserFactory(unet_k_wrapped)
 
-# vae_model_name = 'hakurei/waifu-diffusion-v1-4' if model_name == 'hakurei/waifu-diffusion' else model_name
 vae_dtype = torch_dtype
-if model_name == 'hakurei/waifu-diffusion':
-  # hlky kindly exported the WD1.4 VAE checkpoint to a diffusers diffusion_pytorch_model.bin for me
-  # https://huggingface.co/hakurei/waifu-diffusion-v1-4/blob/main/vae/kl-f8-anime.ckpt
-  vae_model_name = '/Users/birch/machine-learning/waifu-diffusion-v1-4'
-  vae_revision = None
-else:
-  vae_model_name = model_name
-  vae_revision = revision
+vae_revision = revision
 # you can make VAE 32-bit but it looks the same to me and would be slightly slower + more disk space
 # vae_dtype: torch.dtype = torch.float32
 # vae_revision=None
 
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
-  vae_model_name,
+  model_name,
   subfolder='vae',
   revision=vae_revision,
   torch_dtype=vae_dtype,
@@ -101,7 +94,7 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 
 clip_impl = ClipImplementation.HF
-clip_ckpt = ClipCheckpoint.LAION if needs_laion_embed else ClipCheckpoint.OpenAI
+clip_ckpt: ClipCheckpoint = model_needs.clip_ckpt
 clip_subtract_hidden_state_layers = 1 if needs_penultimate_clip_hidden_state else 0
 embed: Embed = get_embedder(
   impl=clip_impl,
@@ -152,6 +145,7 @@ batch_size = 1
 num_images_per_prompt = 1
 width = 768 if is_768 else 512
 height = width
+# note: WD1.4 prefers area=640**2 and no side longer than 768
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
   text_embeddings: Tensor = embed(prompts)

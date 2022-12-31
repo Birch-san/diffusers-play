@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from helpers.embed_text import ClipCheckpoint
 import torch
 
 sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
@@ -12,8 +13,12 @@ _768_models = { *sd2_768_models }
 vparam_models = { *sd2_768_models }
 penultimate_clip_hidden_state_models = { *sd2_models }
 
-def get_needs_laion_embed(model_name: str) -> bool:
-  return model_name in laion_embed_models
+def get_clip_ckpt(model_name: str) -> ClipCheckpoint:
+  if model_name == 'hakurei/waifu-diffusion':
+    return ClipCheckpoint.Waifu
+  if model_name in laion_embed_models:
+    return ClipCheckpoint.LAION
+  return ClipCheckpoint.OpenAI
 
 def get_is_768(model_name: str) -> bool:
   return model_name in _768_models
@@ -29,7 +34,7 @@ def get_needs_upcast_attention(model_name: str, unet_dtype: torch.dtype) -> bool
 
 @dataclass
 class ModelNeeds:
-  needs_laion_embed: bool
+  clip_ckpt: ClipCheckpoint
   is_768: bool
   needs_vparam: bool
   needs_penultimate_clip_hidden_state: bool
@@ -37,7 +42,7 @@ class ModelNeeds:
 
 def get_model_needs(model_name: str, unet_dtype: torch.dtype) -> ModelNeeds:
   return ModelNeeds(
-    needs_laion_embed=get_needs_laion_embed(model_name),
+    clip_ckpt=get_clip_ckpt(model_name),
     is_768=get_is_768(model_name),
     needs_vparam=get_needs_vparam(model_name),
     needs_penultimate_clip_hidden_state=get_needs_penultimate_clip_hidden_state(model_name),

@@ -14,6 +14,7 @@ class ClipImplementation(Enum):
 class ClipCheckpoint(Enum):
   OpenAI = auto()
   LAION = auto()
+  Waifu = auto()
 
 def get_embedder(
   impl: ClipImplementation,
@@ -33,6 +34,10 @@ def get_embedder(
         case ClipCheckpoint.LAION:
           # model_name = 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K'
           model_name = 'stabilityai/stable-diffusion-2'
+          tokenizer_extra_args = {'subfolder': 'tokenizer'}
+          encoder_extra_args = {'subfolder': 'text_encoder'}
+        case ClipCheckpoint.Waifu:
+          model_name = 'hakurei/waifu-diffusion'
           tokenizer_extra_args = {'subfolder': 'tokenizer'}
           encoder_extra_args = {'subfolder': 'text_encoder'}
         case _:

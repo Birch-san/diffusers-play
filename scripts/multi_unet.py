@@ -73,6 +73,11 @@ sd2_encoder = TextEncoderSpec(
   clip_ckpt=ClipCheckpoint.LAION,
   subtract_hidden_state_layers=1
 )
+wd1_4_encoder = TextEncoderSpec(
+  clip_impl=ClipImplementation.HF,
+  clip_ckpt=ClipCheckpoint.Waifu,
+  subtract_hidden_state_layers=1
+)
 jpsd = ModelSpec(
   name='rinna/japanese-stable-diffusion',
   revision=unet_revision,
@@ -81,10 +86,12 @@ jpsd = ModelSpec(
   needs_vparam=False,
 )
 wd = ModelSpec(
+  # specifications for WD1.4 (untested)
   name='hakurei/waifu-diffusion',
-  revision=unet_revision,
+  # at the time of writing: no fp16 revision has been uploaded
+  revision=None,
   torch_dtype=unet_dtype,
-  encoder=encoder,
+  encoder=wd1_4_encoder,
   needs_vparam=False,
 )
 sd2_base = ModelSpec(
