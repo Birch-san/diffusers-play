@@ -13,9 +13,9 @@ class NN(Module):
 	def __init__(self) -> None:
 		super().__init__()
 		self.layers = Sequential(
-			Linear(in_features=1, out_features=10, bias=True),
+			Linear(in_features=1, out_features=12, bias=True),
 			ReLU(),
-			Linear(in_features=10, out_features=1, bias=True),
+			Linear(in_features=12, out_features=1, bias=False),
 			# ReLU(),
 		)
 	
@@ -36,7 +36,7 @@ def train(inputs: Tensor, targets: Tensor) -> Tensor:
 
 def trainer() -> None:
 	model.train()
-	optim = AdamW(model.parameters(), lr=5e-3)
+	optim = AdamW(model.parameters(), lr=1e-3)
 	epochs = 10000
 	for epoch in range(epochs):
 		inputs = torch.rand((800, 1), device=device, dtype=training_dtype, requires_grad=True)*12
