@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor, no_grad
 from torch.nn import Linear, MSELoss, Module, Sequential, ReLU
-from torch.optim import AdamW
+from torch.optim import SGD, AdamW
 from helpers.device import get_device_type, DeviceLiteral
 from enum import Enum, auto
 
@@ -39,8 +39,7 @@ def trainer() -> None:
 	optim = AdamW(model.parameters(), lr=5e-3)
 	epochs = 10000
 	for epoch in range(epochs):
-		# inputs = torch.randint(1, 12, (400, 1), device=device, dtype=training_dtype, requires_grad=True)
-		inputs = torch.randn((400, 1), device=device, dtype=training_dtype, requires_grad=True)*12+1
+		inputs = torch.rand((800, 1), device=device, dtype=training_dtype, requires_grad=True)*12
 		targets = inputs.detach() ** 2
 		loss: Tensor = train(inputs, targets)
 
