@@ -104,7 +104,7 @@
       }
     },
     {
-      "name": "Python: Study",
+      "name": "Python: Study 2",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/scripts/study2.py",
