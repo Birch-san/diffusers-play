@@ -19,7 +19,7 @@ from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sa
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw
-from helpers.embed_text_types import Embed
+from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds
 
@@ -148,13 +148,22 @@ height = width
 # note: WD1.4 prefers area=640**2 and no side longer than 768
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 with no_grad():
-  text_embeddings: Tensor = embed(prompts)
-  chunked = text_embeddings.chunk(text_embeddings.size(0))
+  embedding_and_mask: EmbeddingAndMask = embed(prompts)
+  text_embeddings, mask = embedding_and_mask
+  embed_chunked = text_embeddings.chunk(text_embeddings.size(0))
+  mask_chunked = mask.chunk(mask.size(0))
   if cfg_enabled:
-    uc, c = chunked
+    uc, c = embed_chunked
+    uc_mask, c_mask = mask_chunked
+    # masking uncond gave me pretty bad results. it could be a special case because SD has trained on the uncond
+    # embedding far more times than any other, so maybe it learned to utilise its padding token embeddings.
+    # TODO: perhaps we don't need to use all 77 token embeddings. there may be a middle-ground between 2 and 77.
+    #       if found: this may enable us to *crop* the embedding tensors instead of masking them, resulting in faster cross-attention
+    uc_mask = torch.ones_like(uc_mask)
+    mask = torch.cat([uc_mask, c_mask])
   else:
     uc = None
-    c, = chunked
+    c, = embed_chunked
 
   batch_tic = time.perf_counter()
   for seed in seeds:
@@ -163,7 +172,7 @@ with no_grad():
 
     tic = time.perf_counter()
 
-    denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=cond_scale)
+    denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=cond_scale, attention_mask=mask)
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
       sigma_min=sigma_min,

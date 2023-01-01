@@ -1,5 +1,5 @@
 from .diffusers_denoiser import DiffusersSDDenoiser
-from torch import Tensor, cat
+from torch import Tensor, BoolTensor, cat
 from typing import Optional, Protocol, NamedTuple
 from abc import ABC, abstractmethod
 
@@ -31,34 +31,43 @@ class AbstractCFGDenoiser(ABC, Denoiser):
 class SerialCFGDenoiser(AbstractCFGDenoiser):
   uncond: Tensor
   cond: Tensor
+  uc_mask: BoolTensor
+  c_mask: BoolTensor
   def __init__(
     self,
     denoiser: DiffusersSDDenoiser,
     uncond: Tensor,
     cond: Tensor,
     cond_scale: float,
+    attention_mask: Optional[BoolTensor] = None,
   ):
     self.uncond = uncond
     self.cond = cond
+    uc_mask, c_mask = attention_mask.chunk(attention_mask.size(0))
+    self.uc_mask = uc_mask
+    self.c_mask = c_mask
     super().__init__(
       denoiser=denoiser,
       cond_scale=cond_scale,
     )
   def get_cfg_conds(self, x: Tensor, sigma: Tensor) -> CFGConds:
-    uncond = self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.uncond)
-    cond = self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
+    uncond = self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.uncond, attention_mask=self.uc_mask)
+    cond = self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond, attention_mask=self.c_mask)
     return CFGConds(uncond, cond)
 
 class ParallelCFGDenoiser(AbstractCFGDenoiser):
   cond_in: Tensor
+  attention_mask: Optional[BoolTensor]
   def __init__(
     self,
     denoiser: DiffusersSDDenoiser,
     uncond: Tensor,
     cond: Tensor,
     cond_scale: float,
+    attention_mask: Optional[BoolTensor] = None,
   ):
     self.cond_in = cat([uncond, cond])
+    self.attention_mask = attention_mask
     super().__init__(
       denoiser=denoiser,
       cond_scale=cond_scale,
@@ -66,17 +75,29 @@ class ParallelCFGDenoiser(AbstractCFGDenoiser):
   def get_cfg_conds(self, x: Tensor, sigma: Tensor) -> CFGConds:
     x_in = x.expand(self.cond_in.size(dim=0), -1, -1, -1)
     del x
-    uncond, cond = self.denoiser(input=x_in, sigma=sigma, encoder_hidden_states=self.cond_in).chunk(self.cond_in.size(dim=0))
+    uncond, cond = self.denoiser(input=x_in, sigma=sigma, encoder_hidden_states=self.cond_in, attention_mask=self.attention_mask).chunk(self.cond_in.size(dim=0))
     return CFGConds(uncond, cond)
 
 class NoCFGDenoiser(Denoiser):
   denoiser: DiffusersSDDenoiser
   cond: Tensor
-  def __init__(self, denoiser: DiffusersSDDenoiser, cond: Tensor):
+  attention_mask: Optional[BoolTensor]
+  def __init__(
+    self,
+    denoiser: DiffusersSDDenoiser,
+    cond: Tensor,
+    attention_mask: Optional[BoolTensor] = None,
+  ):
     self.denoiser = denoiser
     self.cond = cond
+    self.attention_mask = attention_mask
   def __call__(self, x: Tensor, sigma: Tensor) -> Tensor:
-    return self.denoiser(input=x, sigma=sigma, encoder_hidden_states=self.cond)
+    return self.denoiser(
+      input=x,
+      sigma=sigma,
+      encoder_hidden_states=self.cond,
+      attention_mask=self.attention_mask,
+    )
 
 class DenoiserFactory():
   denoiser: DiffusersSDDenoiser
@@ -94,11 +115,13 @@ class DenoiserFactory():
     cond: Tensor,
     uncond: Optional[Tensor] = None,
     cond_scale: float = 1.0,
+    attention_mask: Optional[BoolTensor] = None,
   ) -> Denoiser:
     if uncond is None or cond_scale is None:
       return NoCFGDenoiser(
         denoiser=self.denoiser,
         cond=cond,
+        attention_mask=attention_mask,
       )
     if self.one_at_a_time:
       return SerialCFGDenoiser(
@@ -106,10 +129,12 @@ class DenoiserFactory():
         uncond=uncond,
         cond=cond,
         cond_scale=cond_scale,
+        attention_mask=attention_mask,
       )
     return ParallelCFGDenoiser(
       denoiser=self.denoiser,
       uncond=uncond,
       cond=cond,
       cond_scale=cond_scale,
+      attention_mask=attention_mask,
     )
