@@ -20,6 +20,7 @@ def get_embedder(
   impl: ClipImplementation,
   ckpt: ClipCheckpoint,
   subtract_hidden_state_layers = 0,
+  max_context_segments = 1,
   device: DeviceType = 'cpu',
   torch_dtype: torch.dtype = torch.float32
 ) -> Embed:
@@ -50,6 +51,7 @@ def get_embedder(
         tokenizer=tokenizer,
         text_encoder=text_encoder,
         subtract_hidden_state_layers=subtract_hidden_state_layers,
+        max_context_segments=max_context_segments,
       )
       return embed
     case ClipImplementation.OpenCLIP:
@@ -72,6 +74,7 @@ def get_embedder(
           raise "never heard of '{ckpt}' ClipCheckpoint."
       encoder, _, _ = open_clip.create_model_and_transforms(model_name, device=device, pretrained=pretrained)
       encoder: OpenCLIP = encoder.eval()
+      # TODO: support splicing OpenCLIP context segments together
       # TODO: source this in a dynamic way instead of hardcoding
       context_length = 77
       def make_attention_mask(prompts: Prompts) -> BoolTensor:

@@ -100,6 +100,7 @@ embed: Embed = get_embedder(
   impl=clip_impl,
   ckpt=clip_ckpt,
   subtract_hidden_state_layers=clip_subtract_hidden_state_layers,
+  max_context_segments=model_needs.xattn_max_context_segments,
   device=device,
   torch_dtype=torch_dtype
 )
@@ -159,7 +160,12 @@ with no_grad():
     # embedding far more times than any other, so maybe it learned to utilise its padding token embeddings.
     # TODO: perhaps we don't need to use all 77 token embeddings. there may be a middle-ground between 2 and 77.
     #       if found: this may enable us to *crop* the embedding tensors instead of masking them, resulting in faster cross-attention
-    uc_mask = torch.ones_like(uc_mask)
+    # if there are more than 77 token embeddings, it probably means we're using waifu-diffusion's support for conditioning on
+    # "up to three 77-token segments spliced together".
+    # our mask aims only to retain the first of those segments.
+    # because the others are just repeats of the same empty string prompt.
+    # worse: the splicing process removes their BOS but retains their EOS.
+    uc_mask = (torch.arange(uc_mask.size(1), device=device) < 77).unsqueeze(0)
     mask = torch.cat([uc_mask, c_mask])
   else:
     uc = None
