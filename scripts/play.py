@@ -148,6 +148,9 @@ width = 768 if is_768 else 512
 height = width
 # note: WD1.4 prefers area=640**2 and no side longer than 768
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
+
+sum_of_sample_times=0
+initial_sample_time=0
 with no_grad():
   embedding_and_mask: EmbeddingAndMask = embed(prompts)
   text_embeddings, mask = embedding_and_mask
@@ -172,7 +175,7 @@ with no_grad():
     c, = embed_chunked
 
   batch_tic = time.perf_counter()
-  for seed in seeds:
+  for seed_ix, seed in enumerate(seeds):
     generator = Generator(device='cpu').manual_seed(seed)
     latents = randn(latents_shape, generator=generator, device='cpu', dtype=sampling_dtype).to(device)
 
@@ -195,10 +198,26 @@ with no_grad():
       # callback=log_intermediates,
     ).to(vae_dtype)
     pil_images: List[Image.Image] = latents_to_pils(latents)
-    print(f'generated {batch_size} images in {time.perf_counter()-tic} seconds')
+
+    sample_time=time.perf_counter()-tic
+    sum_of_sample_times += sample_time
+    if seed_ix == 0:
+      # account for first sample separately because warmup can be an outlier
+      initial_sample_time = sample_time
+    print(f'generated {batch_size} images in {sample_time} seconds')
 
     base_count = len(os.listdir(sample_path))
     for ix, image in enumerate(pil_images):
       image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
 
-print(f'in total, generated {len(seeds)} batches of {num_images_per_prompt} images in {time.perf_counter()-batch_tic} seconds')
+total_time=time.perf_counter()-batch_tic
+
+batch_count = len(seeds)
+perf_message = f"""in total, generated {batch_count} batches of {num_images_per_prompt} images in (secs):
+{total_time:.2f} (avg {total_time/batch_count:.2f}) (latent generation + k-diffusion sampling + VAE + RGB PIL + PIL to disk)
+{sum_of_sample_times:.2f}, (avg {sum_of_sample_times/batch_count:.2f})  (excl. latent generation, PIL to disk)"""
+if batch_count > 1:
+  excl_warmup_time=sum_of_sample_times-initial_sample_time
+  perf_message += f"""
+{excl_warmup_time:.2f} (avg {excl_warmup_time/(batch_count-1):.2f}) (excl. warmup sample)"""
+print(perf_message)
