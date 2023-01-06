@@ -11,12 +11,9 @@ def _get_segment_split_indices(segments: int, segment_max_length: int) -> List[i
   if segments == 1:
     return [segment_max_length]
   return [
-    # retain first token embedding from first segment, discard its trailing token embedding
-    segment_max_length-1,
-    *(2, segment_max_length-2)*(segments-2), # discard trailing and leading token embeddings of any middle segment
-    2,
-    # retain last token embedding from last segment, discard its leading token embedding
-    segment_max_length-1,
+    # retain first segment
+    segment_max_length,
+    *(1, segment_max_length-1)*(segments-1), # discard BOS embed from any remaining segments; it's a duplicate of BOS from first segment
   ]
 
 def _without_token_embeddings_at_segment_seams(spliced: FloatTensor, split_indices: Iterable[int]) -> FloatTensor:
@@ -64,7 +61,12 @@ def get_embedder(
     text_input_ids = text_input_ids.narrow(1, 0, max_len_excl_special*segments_needed)
     attention_mask: BoolTensor = F.pad(
       tokens.attention_mask.to(dtype=torch.bool, device=device).narrow(1, 0, max_len_excl_special*segments_needed),
-      (2,0),
+      # when we embed each segment individually: they'll each gain special tokens, so we need to extend our mask to include those.
+      # we allocate a positive mask element for:
+      # - BOS+EOS of first segment
+      # - EOS of each subsequent segment
+      #   - we don't need to allocate mask element for their BOS embeds, since we'll narrow those out of the tensor altogether.
+      (2+(segments_needed-1),0),
       'constant',
       1,
     )
