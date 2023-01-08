@@ -144,9 +144,13 @@ log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 cond_scale = 7.5 if cfg_enabled else 1.
 batch_size = 1
 num_images_per_prompt = 1
-width = 768 if is_768 else 512
-height = width
-# note: WD1.4 prefers area=640**2 and no side longer than 768
+if model_name == 'hakurei/waifu-diffusion':
+  # WD1.4 was trained on area=640**2 and no side longer than 768
+  height = 768
+  width = 640**2//height
+else:
+  width = 768 if is_768 else 512
+  height = width
 latents_shape = (batch_size * num_images_per_prompt, unet.in_channels, height // 8, width // 8)
 
 sum_of_sample_times=0
