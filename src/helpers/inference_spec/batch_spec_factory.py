@@ -1,6 +1,6 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Protocol, Generator, List, Iterable, NamedTuple, Optional, Generic, TypeVar
+from typing import Protocol, Generator, List, Iterable, NamedTuple, Optional, Generic, TypeVar, Any
 from dataclasses import dataclass
 import torch
 from torch import FloatTensor, Generator as TorchGenerator, randn
@@ -108,10 +108,6 @@ class MakeLatents(Protocol, Generic[T]):
   @staticmethod
   def __call__(spec: T, repeat: int = 1) -> FloatTensor: ...
 
-class AreEqual(Protocol, Generic[T]):
-  @staticmethod
-  def __call__(left: T, right: T) -> bool: ...
-
 @dataclass
 class MakeLatentsFromSeedSpec:
   seed: int
@@ -138,24 +134,21 @@ def latents_from_seed_factory(
     return latents.expand(repeat, -1, -1, -1)
   return make_latents
 
-class LatentsGenerator(Generic[T]):
+class LatentBatcher(Generic[T]):
   batch_size: int
   specs: Iterable[T]
   make_latents: MakeLatents[T]
-  # are_equal: AreEqual[T]
   def __init__(
     self,
     batch_size: int,
     specs: Iterable[T],
     make_latents: MakeLatents[T],
-    # are_equal: AreEqual[T]
   ) -> None:
     self.batch_size = batch_size
     self.specs = specs
     self.make_latents = make_latents
-    # self.are_equal = are_equal
 
-  def generate(self) -> Generator[FloatTensor]:
+  def generate(self) -> Generator[FloatTensor, None, None]:
     for chnk in chunk(self.specs, self.batch_size):
       rle_specs: List[RLEGeneric[T]] = list(run_length.encode(chnk))
       latents: List[FloatTensor] = [
@@ -163,6 +156,32 @@ class LatentsGenerator(Generic[T]):
       ]
       yield torch.cat(latents, dim=0)
 
+SampleSpec = TypeVar('SampleSpec')
+
+class MakeLatentBatches(Protocol, Generic[SampleSpec]):
+  @staticmethod
+  def __call__(batch_size: int, specs: Iterable[SampleSpec]) -> Iterable[FloatTensor]: ...
+
+class BatchSpecX(NamedTuple):
+  latents: FloatTensor
+
+class SampleSpecBatcher(Generic[SampleSpec]):
+  make_latent_batches: MakeLatentBatches[SampleSpec]
+  def __init__(
+    self,
+    batch_size: int,
+    make_latent_batches: MakeLatentBatches[SampleSpec],
+  ) -> None:
+    self.batch_size = batch_size
+    self.make_latent_batches = make_latent_batches
+  
+  def generate(
+    self,
+    specs: Iterable[SampleSpec],
+  ) -> Generator[BatchSpecX, None, None]:
+    latent_batches: Iterable[FloatTensor] = self.make_latent_batches(self.batch_size, specs)
+    for latents in latent_batches:
+      yield BatchSpecX(latents=latents)
 
 
 class LatentSampleShape(NamedTuple):
