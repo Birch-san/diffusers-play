@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Protocol, Generator, List, Iterable, NamedTuple, Optional, Generic, TypeVar
 from dataclasses import dataclass
 import torch
-from torch import FloatTensor, Generator as TorchGenerator
+from torch import FloatTensor, Generator as TorchGenerator, randn
 from ..get_seed import get_seed
 from ..device import DeviceType
 from itertools import islice
@@ -121,6 +121,23 @@ class MakeLatentsFromSeed(MakeLatents[MakeLatentsFromSeedSpec]):
   def make(spec: MakeLatentsFromSeedSpec) -> FloatTensor:
     pass
 
+class LatentsShape(NamedTuple):
+  channels: int
+  height: int
+  width: int
+
+def latents_from_seed_factory(
+  shape: LatentsShape,
+  dtype: torch.dtype = torch.float32,
+  device: DeviceType = torch.device('cpu')
+) -> MakeLatents[int]:
+  generator = TorchGenerator(device='cpu')
+  def make_latents(seed: int, repeat: int = 1) -> FloatTensor:
+    generator.manual_seed(seed)
+    latents: FloatTensor = randn((1, *shape), generator=generator, device='cpu', dtype=dtype).to(device)
+    return latents.expand(repeat, -1, -1, -1)
+  return make_latents
+
 class LatentsGenerator(Generic[T]):
   batch_size: int
   specs: Iterable[T]
@@ -145,28 +162,6 @@ class LatentsGenerator(Generic[T]):
         self.make_latents(rle_spec.element, rle_spec.count) for rle_spec in rle_specs
       ]
       yield torch.cat(latents, dim=0)
-      
-    # iter = self.seed_specs.__iter__()
-    # next_spec: Optional[AbstractSeedSpec] = None
-    # seeds_acc: int = 0
-    # latents_acc: List[FloatTensor] = []
-    # while spec := next_spec or next(iter, None):
-    #   seed, taken, next_spec = spec.take(self.batch_size)
-    #   latents: FloatTensor = self.make_latents(seed).unsqueeze(0).expand(taken)
-    #   seeds_acc += taken
-    #   assert seeds_acc <= self.batch_size
-    #   if seeds_acc == self.batch_size:
-    #     if latents_acc:
-    #       latents_acc.append(latents)
-    #       yield torch.stack(latents_acc)
-    #       latents_acc.clear()
-    #     else:
-    #       yield latents
-    #     seeds_acc = 0
-    #   else:
-    #     latents_acc.append(latents)
-    # if latents_acc:
-    #   yield torch.stack(latents_acc)
 
 
 
