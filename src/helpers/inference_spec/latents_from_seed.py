@@ -17,10 +17,10 @@ def latents_from_seed_factory(
   device: DeviceType = torch.device('cpu')
 ) -> MakeLatents[int]:
   generator = TorchGenerator(device='cpu')
-  def make_latents(seed: int, repeat: int = 1) -> FloatTensor:
+  def make_latents(seed: int) -> FloatTensor:
     generator.manual_seed(seed)
     latents: FloatTensor = randn((1, *shape), generator=generator, device='cpu', dtype=dtype).to(device)
-    return latents.expand(repeat, -1, -1, -1)
+    return latents
   return make_latents
 
 def make_latent_batches(

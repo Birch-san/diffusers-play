@@ -7,7 +7,7 @@ SampleSpec = TypeVar('SampleSpec')
 
 class MakeLatents(Protocol, Generic[SampleSpec]):
   @staticmethod
-  def __call__(spec: SampleSpec, repeat: int = 1) -> FloatTensor: ...
+  def __call__(spec: SampleSpec) -> FloatTensor: ...
 
 class LatentBatcher(Generic[SampleSpec]):
   make_latents: MakeLatents[SampleSpec]
@@ -24,6 +24,6 @@ class LatentBatcher(Generic[SampleSpec]):
     for chnk in spec_chunks:
       rle_specs: List[RLEGeneric[SampleSpec]] = list(run_length.encode(chnk))
       latents: List[FloatTensor] = [
-        self.make_latents(rle_spec.element, rle_spec.count) for rle_spec in rle_specs
+        self.make_latents(rle_spec.element).expand(rle_spec.count, -1, -1, -1) for rle_spec in rle_specs
       ]
       yield cat(latents, dim=0)
