@@ -4,7 +4,7 @@ from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 import torch
 from torch import FloatTensor
-from typing import Iterable, Generator, List
+from typing import Iterable, Generator, List, Tuple
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
@@ -22,14 +22,12 @@ make_latents: MakeLatents[int] = latents_from_seed_factory(latents_shape, dtype=
 class SampleSpec:
   seed: int
 
-def make_latent_batches(batch_size: int, specs: Iterable[SampleSpec]) -> Iterable[FloatTensor]:
-  seeds: Iterable[int] = map(lambda spec: spec.seed, specs)
+def make_latent_batches(spec_chunks: Iterable[Tuple[SampleSpec, ...]]) -> Iterable[FloatTensor]:
+  seed_chunks: Iterable[Tuple[int, ...]] = map(lambda chunk: tuple(map(lambda spec: spec.seed, chunk)), spec_chunks)
   batcher = LatentBatcher(
-    batch_size=batch_size,
-    specs=seeds,
     make_latents=make_latents,
   )
-  generator: Generator[FloatTensor, None, None] = batcher.generate()
+  generator: Generator[FloatTensor, None, None] = batcher.generate(seed_chunks)
   return generator
 
 sample_spec_batcher = SampleSpecBatcher(
@@ -47,5 +45,6 @@ seeds: List[int] = [
 sample_specs: Iterable[SampleSpec] = map(lambda seed: SampleSpec(seed=seed), seeds)
 generator: Generator[BatchSpecX, None, None] = sample_spec_batcher.generate(sample_specs)
 
-for latents, in generator:
+for spec_chunk, latents in generator:
+  print(spec_chunk)
   print(latents)
