@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from helpers.inference_spec.batch_spec_factory import LatentBatcher, latents_from_seed_factory, MakeLatents, LatentsShape, SampleSpecBatcher, MakeLatentBatches, BatchSpecX
+from helpers.inference_spec.sample_spec_batcher import SampleSpecBatcher, BatchSpecGeneric
+from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, MakeLatents, make_latent_batches, LatentsShape
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 import torch
-from torch import FloatTensor
-from typing import Iterable, Generator, List, Tuple
+from typing import Iterable, Generator, List
+from functools import partial
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
@@ -22,17 +23,9 @@ make_latents: MakeLatents[int] = latents_from_seed_factory(latents_shape, dtype=
 class SampleSpec:
   seed: int
 
-def make_latent_batches(spec_chunks: Iterable[Tuple[SampleSpec, ...]]) -> Iterable[FloatTensor]:
-  seed_chunks: Iterable[Tuple[int, ...]] = map(lambda chunk: tuple(map(lambda spec: spec.seed, chunk)), spec_chunks)
-  batcher = LatentBatcher(
-    make_latents=make_latents,
-  )
-  generator: Generator[FloatTensor, None, None] = batcher.generate(seed_chunks)
-  return generator
-
 sample_spec_batcher = SampleSpecBatcher(
   batch_size=3,
-  make_latent_batches=make_latent_batches,
+  make_latent_batches=partial(make_latent_batches, make_latents),
 )
 n_rand_seeds=2
 seeds: List[int] = [
@@ -43,7 +36,7 @@ seeds: List[int] = [
   *[get_seed() for _ in range(n_rand_seeds)]
 ]
 sample_specs: Iterable[SampleSpec] = map(lambda seed: SampleSpec(seed=seed), seeds)
-generator: Generator[BatchSpecX, None, None] = sample_spec_batcher.generate(sample_specs)
+generator: Generator[BatchSpecGeneric[SampleSpec], None, None] = sample_spec_batcher.generate(sample_specs)
 
 for spec_chunk, latents in generator:
   print(spec_chunk)
