@@ -1,8 +1,9 @@
 import torch
 from torch import Generator as TorchGenerator, FloatTensor, randn
-from typing import NamedTuple, Iterable, Tuple, Generator, TypeVar, Protocol, Generic
+from typing import NamedTuple, Iterable, Tuple, Generator, TypeVar
 from ..device import DeviceType
 from .latent_batcher import MakeLatents, LatentBatcher
+from .map_spec_chunks import MapSpec
 
 SampleSpec = TypeVar('SampleSpec')
 
@@ -23,16 +24,12 @@ def latents_from_seed_factory(
     return latents
   return make_latents
 
-class GetSeedFromSpec(Protocol, Generic[SampleSpec]):
-  @staticmethod
-  def __call__(spec: SampleSpec) -> int: ...
+class GetSeedFromSpec(MapSpec[SampleSpec, int]): pass
 
 def make_latent_batches(
   make_latents: MakeLatents[int],
-  get_seed_from_spec: GetSeedFromSpec,
-  spec_chunks: Iterable[Tuple[SampleSpec, ...]],
+  seed_chunks: Iterable[Tuple[int, ...]],
 ) -> Iterable[FloatTensor]:
-  seed_chunks: Iterable[Tuple[int, ...]] = map(lambda chunk: tuple(map(get_seed_from_spec, chunk)), spec_chunks)
   batcher = LatentBatcher(
     make_latents=make_latents,
   )

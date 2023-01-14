@@ -1,6 +1,7 @@
-from typing import Iterable, Tuple, Generator, TypeVar, Generic, Protocol
+from typing import Iterable, Tuple, Generator, TypeVar
 from .cond_batcher import MakeConds, CondBatcher
 from ..embed_text_types import Embed, EmbeddingAndMask, Prompts
+from .map_spec_chunks import MapSpec
 
 SampleSpec = TypeVar('SampleSpec')
 
@@ -12,18 +13,14 @@ def conds_from_prompts_factory(
     return embedding_and_mask
   return make_conds
 
-class GetPromptsFromSpec(Protocol, Generic[SampleSpec]):
-  @staticmethod
-  def __call__(spec: SampleSpec) -> Prompts: ...
+class GetPromptsFromSpec(MapSpec[SampleSpec, Prompts]): pass
 
 def make_cond_batches(
   make_conds: MakeConds[int],
-  get_prompts_from_spec: GetPromptsFromSpec,
-  spec_chunks: Iterable[Tuple[SampleSpec, ...]],
+  prompts_chunks: Iterable[Tuple[Prompts, ...]],
 ) -> Iterable[EmbeddingAndMask]:
-  seed_chunks: Iterable[Tuple[Prompts, ...]] = map(lambda chunk: tuple(map(get_prompts_from_spec, chunk)), spec_chunks)
   batcher = CondBatcher(
     make_conds=make_conds,
   )
-  generator: Generator[EmbeddingAndMask, None, None] = batcher.generate(seed_chunks)
+  generator: Generator[EmbeddingAndMask, None, None] = batcher.generate(prompts_chunks)
   return generator
