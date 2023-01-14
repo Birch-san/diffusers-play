@@ -1,16 +1,15 @@
 from dataclasses import dataclass
 from helpers.inference_spec.sample_spec_batcher import SampleSpecBatcher, BatchSpecGeneric
-from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, MakeLatents, make_latent_batches, LatentsShape, GetSeedFromSpec
-from helpers.inference_spec.map_spec_chunks import map_spec_chunks
+from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, MakeLatents, make_latent_batches, LatentsShape
+from helpers.inference_spec.map_spec_chunks import map_spec_chunks, MapSpec
 from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition
 from helpers.inference_spec.cond_batcher import MakeConds
-from helpers.inference_spec.conds_from_prompts import make_cond_batches, conds_from_prompts_factory, GetPromptsFromSpec
+from helpers.inference_spec.conds_from_prompts import make_cond_batches, conds_from_prompts_factory
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 import torch
 from typing import Iterable, Generator
-from functools import partial
 from itertools import chain, repeat
 
 device_type: DeviceLiteral = get_device_type()
@@ -43,8 +42,8 @@ def get_prompts(cond_spec: ConditionSpec) -> Prompts:
     return cond_spec.get_prompts()
   return ['', cond_spec.get_prompts()]
 
-get_seed_from_spec: GetSeedFromSpec = lambda spec: spec.seed
-get_prompts_from_spec: GetPromptsFromSpec[SampleSpec] = lambda spec: get_prompts(spec.cond_spec)
+get_seed_from_spec: MapSpec[SampleSpec, int] = lambda spec: spec.seed
+get_prompts_from_spec: MapSpec[SampleSpec, Prompts] = lambda spec: get_prompts(spec.cond_spec)
 
 sample_spec_batcher = SampleSpecBatcher(
   batch_size=3,

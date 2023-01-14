@@ -1,9 +1,6 @@
-from typing import Iterable, Tuple, Generator, TypeVar
+from typing import Iterable, Tuple, Generator
 from .cond_batcher import MakeConds, CondBatcher
 from ..embed_text_types import Embed, EmbeddingAndMask, Prompts
-from .map_spec_chunks import MapSpec
-
-SampleSpec = TypeVar('SampleSpec')
 
 def conds_from_prompts_factory(
   embed: Embed,
@@ -12,8 +9,6 @@ def conds_from_prompts_factory(
     embedding_and_mask = embed(prompts)
     return embedding_and_mask
   return make_conds
-
-class GetPromptsFromSpec(MapSpec[SampleSpec, Prompts]): pass
 
 def make_cond_batches(
   make_conds: MakeConds[int],
