@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from ..embed_text_types import Prompts
 from typing import Optional
-from .sample_spec_2 import SampleSpec
+from .sample_spec import SampleSpec
 from .latent_spec import Img2ImgSpec, FeedbackSpec
 
 @dataclass

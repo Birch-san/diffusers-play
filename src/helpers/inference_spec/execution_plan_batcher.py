@@ -1,30 +1,47 @@
-from typing import TypeVar, Protocol, Generic, Iterable, Tuple, List, Generator, TypeAlias
-from .execution_plan import ExecutionPlan
-from ..iteration.rle import run_length, RLEGeneric
+from typing import Generic, TypeVar, Protocol, Generator, Iterable, List, NamedTuple, Optional
 
 SampleSpec = TypeVar('SampleSpec')
+ExecutionPlan = TypeVar('ExecutionPlan')
 
-ExecutionPlanBatcherOutput: TypeAlias = RLEGeneric[ExecutionPlan]
-
-class MakeExecutionPlan(Protocol, Generic[SampleSpec]):
+class MakeExecutionPlan(Protocol, Generic[SampleSpec, ExecutionPlan]):
   @staticmethod
   def __call__(spec: SampleSpec) -> ExecutionPlan: ...
 
-class ExecutionPlanBatcher(Generic[SampleSpec]):
-  make_execution_plan: MakeExecutionPlan[SampleSpec]
+class BatchSpec(NamedTuple):
+  execution_plan: ExecutionPlan
+  sample_specs: List[SampleSpec]
+class BatchSpecGeneric(BatchSpec, Generic[ExecutionPlan]): pass
+
+class ExecutionPlanBatcher(Generic[SampleSpec, ExecutionPlan]):
+  max_batch_size: int
+  make_execution_plan: MakeExecutionPlan[SampleSpec, ExecutionPlan]
   def __init__(
     self,
-    make_execution_plan: MakeExecutionPlan[SampleSpec],
+    max_batch_size: int,
+    make_execution_plan: MakeExecutionPlan[SampleSpec, ExecutionPlan],
   ) -> None:
+    self.max_batch_size = max_batch_size
     self.make_execution_plan = make_execution_plan
-
-  def generate(
-    self,
-    spec_chunks: Iterable[Tuple[SampleSpec, ...]],
-  ) -> Generator[ExecutionPlanBatcherOutput, None, None]:
-    for chnk in spec_chunks:
-      rle_specs: List[RLEGeneric[SampleSpec]] = list(run_length.encode(chnk))
-      ex_plans: List[RLEGeneric[ExecutionPlan]] = [
-        RLEGeneric(self.make_execution_plan(rle_spec.element), rle_spec.count) for rle_spec in rle_specs
-      ]
-      yield ex_plans
+  
+  def generate(self, specs: Iterable[SampleSpec]) -> Generator[BatchSpecGeneric[ExecutionPlan], None, None]:
+    current_plan: Optional[ExecutionPlan] = None
+    current_batch: List[SampleSpec] = []
+    for spec in specs:
+      plan: ExecutionPlan = self.make_execution_plan(spec)
+      if current_plan is None:
+        current_plan = plan
+      if plan == current_plan:
+        current_batch.append(spec)
+        if len(current_batch) == self.max_batch_size:
+          yield BatchSpecGeneric[ExecutionPlan](
+            execution_plan=current_plan,
+            sample_specs=current_batch,
+          )
+          current_batch.clear()
+          current_plan = None
+    if current_batch:
+      assert current_plan is not None
+      yield BatchSpecGeneric[ExecutionPlan](
+        execution_plan=current_plan,
+        sample_specs=current_batch,
+      )

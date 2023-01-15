@@ -22,11 +22,11 @@ from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_t
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds
-from helpers.inference_spec.sample_spec_2 import SampleSpec
+from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
 from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition
-from helpers.inference_spec.execution_plan_batcher_2 import ExecutionPlanBatcher, BatchSpecGeneric
+from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
 from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
 from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
@@ -109,7 +109,7 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.Mastering
+schedule_template = KarrasScheduleTemplate.Prototyping
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,
