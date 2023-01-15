@@ -1,8 +1,11 @@
 from typing import Protocol, Generator, Iterable, NamedTuple, Generic, TypeVar, Tuple, List
 from torch import FloatTensor
 from itertools import tee
+from ..iteration.rle import RLEGeneric
 from ..iteration.chunk import chunk
 from ..embed_text_types import EmbeddingAndMask
+from .latent_batcher import LatentBatcherOutput
+from .cond_batcher import CondBatcherOutput
 
 SampleSpec = TypeVar('SampleSpec')
 
@@ -12,12 +15,12 @@ class MakeLatentBatches(Protocol, Generic[SampleSpec]):
 
 class MakeCondBatches(Protocol, Generic[SampleSpec]):
   @staticmethod
-  def __call__(spec_chunks: Iterable[Tuple[SampleSpec, ...]]) -> Iterable[EmbeddingAndMask]: ...
+  def __call__(spec_chunks: Iterable[Tuple[SampleSpec, ...]]) -> Iterable[RLEGeneric[EmbeddingAndMask]]: ...
 
 class BatchSpec(NamedTuple):
   spec_chunk: Tuple[SampleSpec, ...]
-  latents: FloatTensor
-  conds: List[EmbeddingAndMask]
+  latents: LatentBatcherOutput
+  conds: CondBatcherOutput
 class BatchSpecGeneric(BatchSpec, Generic[SampleSpec]): pass
 
 class SampleSpecBatcher(Generic[SampleSpec]):

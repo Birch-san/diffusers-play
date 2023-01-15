@@ -1,13 +1,15 @@
-from typing import TypeVar, Protocol, Generic, Iterable, Tuple, List, Generator
+from typing import TypeVar, Protocol, Generic, Iterable, Tuple, List, Generator, TypeAlias
 from torch import FloatTensor
 from torch import cat
 from ..iteration.rle import run_length, RLEGeneric
 
 SampleSpec = TypeVar('SampleSpec')
 
+LatentBatcherOutput: TypeAlias = FloatTensor
+
 class MakeLatents(Protocol, Generic[SampleSpec]):
   @staticmethod
-  def __call__(spec: SampleSpec) -> FloatTensor: ...
+  def __call__(spec: SampleSpec) -> LatentBatcherOutput: ...
 
 class LatentBatcher(Generic[SampleSpec]):
   make_latents: MakeLatents[SampleSpec]
@@ -20,7 +22,7 @@ class LatentBatcher(Generic[SampleSpec]):
   def generate(
     self,
     spec_chunks: Iterable[Tuple[SampleSpec, ...]],
-  ) -> Generator[FloatTensor, None, None]:
+  ) -> Generator[LatentBatcherOutput, None, None]:
     for chnk in spec_chunks:
       rle_specs: List[RLEGeneric[SampleSpec]] = list(run_length.encode(chnk))
       latents: List[FloatTensor] = [
