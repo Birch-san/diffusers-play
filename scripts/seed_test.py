@@ -4,7 +4,7 @@ from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, 
 from helpers.inference_spec.map_spec_chunks import map_spec_chunks, MapSpec
 from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition
 from helpers.inference_spec.cond_batcher import MakeConds
-from helpers.inference_spec.conds_from_prompts import make_cond_batches, conds_from_prompts_factory
+from helpers.inference_spec.conds_from_prompts import make_cond_batches, conds_from_prompts_factory, prompts_from_cond_spec
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
@@ -32,13 +32,8 @@ def embed(prompts: Prompts) -> EmbeddingAndMask:
   )
 make_conds: MakeConds[Prompts] = conds_from_prompts_factory(embed)
 
-def get_prompts(cond_spec: ConditionSpec) -> Prompts:
-  if cond_spec.cfg_scale == 1.0:
-    return cond_spec.get_prompts()
-  return ['', cond_spec.get_prompts()]
-
 get_seed_from_spec: MapSpec[SampleSpec, int] = lambda spec: spec.seed
-get_prompts_from_spec: MapSpec[SampleSpec, Prompts] = lambda spec: get_prompts(spec.cond_spec)
+get_prompts_from_spec: MapSpec[SampleSpec, Prompts] = lambda spec: prompts_from_cond_spec(spec.cond_spec)
 
 sample_spec_batcher = SampleSpecBatcher(
   batch_size=3,

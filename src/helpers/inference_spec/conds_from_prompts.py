@@ -1,6 +1,12 @@
 from typing import Iterable, Tuple, Generator
 from .cond_batcher import MakeConds, CondBatcher
 from ..embed_text_types import Embed, EmbeddingAndMask, Prompts
+from .cond_spec import ConditionSpec
+
+def prompts_from_cond_spec(cond_spec: ConditionSpec) -> Prompts:
+  if cond_spec.cfg_scale == 1.0:
+    return cond_spec.get_prompts()
+  return ['', cond_spec.get_prompts()]
 
 def conds_from_prompts_factory(
   embed: Embed,
