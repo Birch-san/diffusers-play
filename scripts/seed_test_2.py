@@ -67,7 +67,6 @@ batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
-carry: Optional[FloatTensor] = None
 for batch_ix, (plan, specs) in enumerate(batch_generator):
   seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
