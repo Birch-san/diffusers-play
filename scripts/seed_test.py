@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.sample_spec_batcher import SampleSpecBatcher, BatchSpecGeneric
 from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, MakeLatents, make_latent_batches, LatentsShape
 from helpers.inference_spec.map_spec_chunks import map_spec_chunks, MapSpec
@@ -27,15 +27,10 @@ make_latents: MakeLatents[int] = latents_from_seed_factory(latents_shape, dtype=
 # mock embed function so we don't have to load CLIP
 def embed(prompts: Prompts) -> EmbeddingAndMask:
   return EmbeddingAndMask(
-    embedding=torch.ones(1, 77, 768, dtype=torch.float32, device=device),
-    attn_mask=torch.ones(1, 77, 768, dtype=torch.bool, device=device),
+    embedding=torch.ones(len(prompts), 77, 768, dtype=torch.float32, device=device),
+    attn_mask=torch.ones(len(prompts), 77, 768, dtype=torch.bool, device=device),
   )
 make_conds: MakeConds[Prompts] = conds_from_prompts_factory(embed)
-
-@dataclass
-class SampleSpec:
-  seed: int
-  cond_spec: ConditionSpec
 
 def get_prompts(cond_spec: ConditionSpec) -> Prompts:
   if cond_spec.cfg_scale == 1.0:

@@ -1,21 +1,7 @@
-from typing import Iterable, TypeAlias
 from dataclasses import dataclass
-from abc import ABC
+from .cond_spec import ConditionSpec
 
 @dataclass
-class WeightedPrompt():
-  text: str
-  weight: float
-
-MultiPrompt: TypeAlias = Iterable[WeightedPrompt]
-
-@dataclass
-class SampleSpec(ABC):
+class SampleSpec:
   seed: int
-  multiprompt: MultiPrompt
-
-@dataclass
-class BetweenSampleSpec(SampleSpec):
-  target_multiprompt: MultiPrompt
-  interp_quotient: float
-SampleSpec.register(BetweenSampleSpec)
+  cond_spec: ConditionSpec
