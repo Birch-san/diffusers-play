@@ -9,7 +9,7 @@ LatentBatcherOutput: TypeAlias = FloatTensor
 
 class MakeLatents(Protocol, Generic[SampleSpec]):
   @staticmethod
-  def __call__(spec: SampleSpec) -> LatentBatcherOutput: ...
+  def __call__(spec: SampleSpec) -> FloatTensor: ...
 
 class LatentBatcher(Generic[SampleSpec]):
   make_latents: MakeLatents[SampleSpec]

@@ -8,7 +8,7 @@ CondBatcherOutput: TypeAlias = List[RLEGeneric[EmbeddingAndMask]]
 
 class MakeConds(Protocol, Generic[SampleSpec]):
   @staticmethod
-  def __call__(spec: SampleSpec) -> CondBatcherOutput: ...
+  def __call__(spec: SampleSpec) -> EmbeddingAndMask: ...
 
 class CondBatcher(Generic[SampleSpec]):
   make_conds: MakeConds[SampleSpec]

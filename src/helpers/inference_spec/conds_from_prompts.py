@@ -1,5 +1,5 @@
 from typing import Iterable, Tuple, Generator
-from .cond_batcher import MakeConds, CondBatcher
+from .cond_batcher import MakeConds, CondBatcher, CondBatcherOutput
 from ..embed_text_types import Embed, EmbeddingAndMask, Prompts
 from .cond_spec import ConditionSpec
 
@@ -19,9 +19,9 @@ def conds_from_prompts_factory(
 def make_cond_batches(
   make_conds: MakeConds[int],
   prompts_chunks: Iterable[Tuple[Prompts, ...]],
-) -> Iterable[EmbeddingAndMask]:
+) -> Iterable[CondBatcherOutput]:
   batcher = CondBatcher(
     make_conds=make_conds,
   )
-  generator: Generator[EmbeddingAndMask, None, None] = batcher.generate(prompts_chunks)
+  generator: Generator[CondBatcherOutput, None, None] = batcher.generate(prompts_chunks)
   return generator

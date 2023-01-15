@@ -2,7 +2,7 @@ import torch
 from torch import Generator as TorchGenerator, FloatTensor, randn
 from typing import NamedTuple, Iterable, Tuple, Generator
 from ..device import DeviceType
-from .latent_batcher import MakeLatents, LatentBatcher
+from .latent_batcher import MakeLatents, LatentBatcher, LatentBatcherOutput
 
 class LatentsShape(NamedTuple):
   channels: int
@@ -24,9 +24,9 @@ def latents_from_seed_factory(
 def make_latent_batches(
   make_latents: MakeLatents[int],
   seed_chunks: Iterable[Tuple[int, ...]],
-) -> Iterable[FloatTensor]:
+) -> Iterable[LatentBatcherOutput]:
   batcher = LatentBatcher(
     make_latents=make_latents,
   )
-  generator: Generator[FloatTensor, None, None] = batcher.generate(seed_chunks)
+  generator: Generator[LatentBatcherOutput, None, None] = batcher.generate(seed_chunks)
   return generator

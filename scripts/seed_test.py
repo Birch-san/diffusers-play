@@ -4,6 +4,7 @@ from helpers.inference_spec.latents_from_seed import latents_from_seed_factory, 
 from helpers.inference_spec.map_spec_chunks import map_spec_chunks, MapSpec
 from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition
 from helpers.inference_spec.cond_batcher import MakeConds
+from helpers.inference_spec.execution_plan_from_cond_spec import make_execution_plan_batches, make_execution_plan_from_cond_spec, ExecutionPlan
 from helpers.inference_spec.conds_from_prompts import make_cond_batches, conds_from_prompts_factory, prompts_from_cond_spec
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 from helpers.get_seed import get_seed
@@ -34,11 +35,13 @@ make_conds: MakeConds[Prompts] = conds_from_prompts_factory(embed)
 
 get_seed_from_spec: MapSpec[SampleSpec, int] = lambda spec: spec.seed
 get_prompts_from_spec: MapSpec[SampleSpec, Prompts] = lambda spec: prompts_from_cond_spec(spec.cond_spec)
+get_execution_plan_from_spec: MapSpec[SampleSpec, ConditionSpec] = lambda spec: spec.cond_spec
 
 sample_spec_batcher = SampleSpecBatcher(
   batch_size=3,
   make_latent_batches=lambda spec_chunks: make_latent_batches(make_latents, map_spec_chunks(get_seed_from_spec, spec_chunks)),
   make_cond_batches=lambda spec_chunks: make_cond_batches(make_conds, map_spec_chunks(get_prompts_from_spec, spec_chunks)),
+  make_execution_plan_batches=lambda spec_chunks: make_execution_plan_batches(make_execution_plan_from_cond_spec, map_spec_chunks(get_execution_plan_from_spec, spec_chunks)),
 )
 n_rand_seeds=2
 seeds: Iterable[int] = chain(
@@ -58,8 +61,5 @@ sample_specs: Iterable[SampleSpec] = (SampleSpec(
 ) for seed, cond in zip(seeds, conditions))
 batch_spec_generator: Generator[BatchSpecGeneric[SampleSpec], None, None] = sample_spec_batcher.generate(sample_specs)
 
-for spec_chunk, latents, conds in batch_spec_generator:
-  # print(spec_chunk)
-  # print(latents)
-  # print(conds)
+for batch_ix, (spec_chunk, latents, conds, ex_plan) in enumerate(batch_spec_generator):
   pass
