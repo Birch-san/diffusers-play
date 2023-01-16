@@ -7,6 +7,8 @@ from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
 from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
+from helpers.inference_spec.spec_dependence_checker import SpecDependenceChecker, CheckSpecDependenceStrategy
+from helpers.inference_spec.feedback_spec_dependence_strategy import has_feedback_dependence
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
@@ -61,9 +63,17 @@ sample_specs: Iterable[SampleSpec] = (SampleSpec(
   cond_spec=cond,
 ) for seed, cond in zip(seeds, conditions))
 
+dependence_strategies: List[CheckSpecDependenceStrategy[SampleSpec]] = [
+  has_feedback_dependence,
+]
+spec_dependence_checker=SpecDependenceChecker[SampleSpec](
+  strategies=dependence_strategies,
+)
+
 batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
   max_batch_size=3,
   make_execution_plan=make_execution_plan,
+  depends_on_prev_sample=spec_dependence_checker.has_dependence,
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
