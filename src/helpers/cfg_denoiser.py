@@ -73,9 +73,13 @@ class ParallelCFGDenoiser(AbstractCFGDenoiser):
       cond_scale=cond_scale,
     )
   def get_cfg_conds(self, x: Tensor, sigma: Tensor) -> CFGConds:
-    x_in = x.expand(self.cond_in.size(dim=0), -1, -1, -1)
+    sample_count = x.size(0)
+    conds_per_sample = self.cond_in.size(0)//sample_count
+    x_in = x.repeat(conds_per_sample, 1, 1, 1)
     del x
-    uncond, cond = self.denoiser(input=x_in, sigma=sigma, encoder_hidden_states=self.cond_in, attention_mask=self.attention_mask).chunk(self.cond_in.size(dim=0))
+    sigma_in = sigma.repeat(conds_per_sample)
+    del sigma
+    uncond, cond = self.denoiser(input=x_in, sigma=sigma_in, encoder_hidden_states=self.cond_in, attention_mask=self.attention_mask).chunk(conds_per_sample)
     return CFGConds(uncond, cond)
 
 class NoCFGDenoiser(Denoiser):
