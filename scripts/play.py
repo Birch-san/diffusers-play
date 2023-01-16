@@ -162,8 +162,7 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-# TODO: make larger batches work
-max_batch_size = 1
+max_batch_size = 2
 n_rand_seeds = 1
 seeds: Iterable[int] = chain(
   (
@@ -190,10 +189,13 @@ consistent_batch_size=None
 sum_of_batch_times=0
 initial_batch_time=0
 sample_count=0
+batch_count=0
 
 with no_grad():
   batch_tic = time.perf_counter()
   for batch_ix, (plan, specs) in enumerate(batch_generator):
+    batch_count += 1
+    batch_sample_count = len(specs)
     seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
     latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompts)
@@ -206,7 +208,12 @@ with no_grad():
       mask = torch.cat([uc_mask, c_mask])
     else:
       uc, c = None, embedding
-      uc_mask, c_mask = None, mask
+      uc_mask, c_mask = None
+    
+    if uc is not None:
+      uc = uc.repeat(batch_sample_count, 1, 1)
+    c = c.repeat(batch_sample_count, 1, 1)
+    mask = mask.repeat_interleave(batch_sample_count, 0)
 
     # TODO: support varied CFG scale within a batch
     denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=specs[0].cond_spec.cfg_scale, attention_mask=mask)
@@ -231,22 +238,20 @@ with no_grad():
 
     sample_time=time.perf_counter()-tic
     sum_of_batch_times += sample_time
-    sample_count += len(specs)
+    sample_count += batch_sample_count
     if batch_ix == 0:
       # account for first sample separately because warmup can be an outlier
       initial_batch_time = sample_time
       # if all 
-      consistent_batch_size = len(specs)
+      consistent_batch_size = batch_sample_count
     else:
-      consistent_batch_size = consistent_batch_size if len(specs) == consistent_batch_size else None
+      consistent_batch_size = consistent_batch_size if batch_sample_count == consistent_batch_size else None
 
     base_count = len(os.listdir(sample_path))
     for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
       image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
 
 total_time=time.perf_counter()-batch_tic
-
-batch_count = len(seeds)
 
 perf_message = f'in total, generated {batch_count} batches'
 if consistent_batch_size is not None:

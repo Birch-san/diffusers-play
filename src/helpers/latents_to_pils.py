@@ -1,5 +1,5 @@
 from functools import partial
-from torch import Tensor, no_grad
+from torch import Tensor, no_grad, cat
 from typing import List, Callable
 from typing_extensions import TypeAlias
 from PIL import Image
@@ -12,7 +12,11 @@ LatentsToPils: TypeAlias = Callable[[Tensor], List[Image.Image]]
 def latents_to_bchw(vae: AutoencoderKL, latents: Tensor) -> Tensor:
   latents: Tensor = 1 / 0.18215 * latents
 
-  images: Tensor = vae.decode(latents).sample
+  if vae.device.type == 'mps' and latents.size(0) > 1:
+    # batched VAE decode seems to be broken in MPS on recent kulinseth master
+    images: Tensor = cat([vae.decode(sample_latents).sample for sample_latents in latents.split(1)])
+  else:
+    images: Tensor = vae.decode(latents).sample
 
   images: Tensor = (images / 2 + 0.5).clamp(0, 1)
   return images
