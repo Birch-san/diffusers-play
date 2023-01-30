@@ -14,6 +14,7 @@ print(reassuring_message_2)
 import torch
 from torch import Tensor, no_grad, zeros, FloatTensor
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
+from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
@@ -76,6 +77,8 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
   upcast_attention=upcast_attention,
 ).to(device).eval()
+if is_xformers_available():
+  unet.enable_xformers_memory_efficient_attention()
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
