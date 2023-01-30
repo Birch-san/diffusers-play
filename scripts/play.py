@@ -111,7 +111,7 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.Prototyping
+schedule_template = KarrasScheduleTemplate.CudaMastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,

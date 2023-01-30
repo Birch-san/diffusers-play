@@ -18,6 +18,8 @@ class KarrasScheduleTemplate(Enum):
   Searching = auto()
   # higher quality, but still not too expensive
   Mastering = auto()
+  # high-quality, for not-potato PC
+  CudaMastering = auto()
 
 def get_template_schedule(
   template: KarrasScheduleTemplate,
@@ -44,6 +46,13 @@ def get_template_schedule(
     case KarrasScheduleTemplate.Mastering:
       return KarrasScheduleParams(
         steps=15,
+        sigma_max=model_sigma_max,
+        sigma_min=model_sigma_min,
+        rho=7.
+      )
+    case KarrasScheduleTemplate.CudaMastering:
+      return KarrasScheduleParams(
+        steps=22,
         sigma_max=model_sigma_max,
         sigma_min=model_sigma_min,
         rho=7.
