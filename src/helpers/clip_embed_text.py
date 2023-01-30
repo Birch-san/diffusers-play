@@ -85,15 +85,8 @@ def get_embedder(
       tokenizer.pad_token_id,
     ).index_put(
       indices=[
-        torch.tensor([0], device=device),
-        torch.arange(prompt_count*segments_needed, device=device),
-        torch.tensor([0], device=device)
-      ],
-      values=bos_t,
-    ).index_put(
-      indices=[
-        torch.tensor([0], device=device),
-        torch.arange(prompt_count*segments_needed, device=device),
+        torch.arange(prompt_count, device=device).repeat_interleave(segments_needed),
+        torch.arange(segments_needed, device=device).repeat(prompt_count),
         (token_lengths.unsqueeze(1).expand(-1, segments_needed) - torch.arange(segments_needed, device=device)*max_len_excl_special+1).clamp(1, max_len_incl_special-1).flatten()
       ],
       values=eos_t,
