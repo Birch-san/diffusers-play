@@ -223,7 +223,6 @@ with no_grad():
       mask = torch.cat([uc_mask, c_mask])
     else:
       uc, c = None, embedding
-      uc_mask, c_mask = None
     
     if uc is not None:
       uc = uc.repeat(batch_sample_count, 1, 1)
