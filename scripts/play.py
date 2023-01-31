@@ -17,6 +17,12 @@ from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
+from helpers.attention.mode import AttentionMode
+from helpers.attention.multi_head_attention.to_mha import to_mha
+from helpers.attention.set_chunked_attn import make_set_chunked_attn
+from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
+from helpers.attention.replace_attn import replace_attn_to_tap_module
+from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw
@@ -77,10 +83,23 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
   upcast_attention=upcast_attention,
 ).to(device).eval()
-xformers_enabled = False
-if is_xformers_available():
-  unet.enable_xformers_memory_efficient_attention()
-  xformers_enabled = True
+
+attn_mode = AttentionMode.TorchMultiheadAttention
+match(attn_mode):
+  case AttentionMode.Standard: pass
+  case AttentionMode.Chunked:
+    set_chunked_attn: TapAttn = make_set_chunked_attn(
+      query_chunk_size = 1024,
+      kv_chunk_size = None,
+    )
+    tap_module: TapModule = tap_attn_to_tap_module(set_chunked_attn)
+    unet.apply(tap_module)
+  case AttentionMode.TorchMultiheadAttention:
+    tap_module: TapModule = replace_attn_to_tap_module(to_mha)
+    unet.apply(tap_module)
+  case AttentionMode.Xformers:
+    assert is_xformers_available()
+    unet.enable_xformers_memory_efficient_attention()
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
@@ -229,10 +248,12 @@ with no_grad():
     c = c.repeat(batch_sample_count, 1, 1)
     mask = mask.repeat_interleave(batch_sample_count, 0)
     
-    if xformers_enabled:
+    match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
       # https://github.com/facebookresearch/xformers/issues/576
-      mask = None
+      # chunked attention *can* be made to support masks, but I didn't implement it yet
+      case AttentionMode.Xformers | AttentionMode.Chunked:
+        mask = None
 
     # TODO: support varied CFG scale within a batch
     denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=specs[0].cond_spec.cfg_scale, attention_mask=mask)
