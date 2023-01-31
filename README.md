@@ -35,6 +35,12 @@ Treat yourself to ipython:
 pip install ipython
 ```
 
+CUDA-only:
+
+```bash
+pip install triton
+```
+
 ## Run
 
 Invoke play.py like so:
