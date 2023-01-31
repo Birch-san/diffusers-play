@@ -77,8 +77,10 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   torch_dtype=torch_dtype,
   upcast_attention=upcast_attention,
 ).to(device).eval()
+xformers_enabled = False
 if is_xformers_available():
   unet.enable_xformers_memory_efficient_attention()
+  xformers_enabled = True
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
@@ -227,6 +229,11 @@ with no_grad():
       uc = uc.repeat(batch_sample_count, 1, 1)
     c = c.repeat(batch_sample_count, 1, 1)
     mask = mask.repeat_interleave(batch_sample_count, 0)
+    
+    if xformers_enabled:
+      # xformers attn_bias is only implemented for Triton + A100 GPU
+      # https://github.com/facebookresearch/xformers/issues/576
+      mask = None
 
     # TODO: support varied CFG scale within a batch
     denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=specs[0].cond_spec.cfg_scale, attention_mask=mask)
