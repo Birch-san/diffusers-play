@@ -112,12 +112,12 @@ seeds: Iterable[int] = chain(
   (get_seed() for _ in range(n_rand_seeds))
 )
 prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
-conditions: Iterable[ConditionSpec] = repeat(SingleCondition(cfg_scale=7.5, prompt=prompt))
+# conditions: Iterable[ConditionSpec] = repeat(SingleCondition(cfg_scale=7.5, prompt=prompt))
 # conditions: Iterable[ConditionSpec] = MultiCond
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
   cond_spec=cond,
-) for seed, cond in zip(seeds, conditions))
+) for seed, cond in zip(seeds, cond_linspace))
 
 dependence_strategies: List[CheckSpecDependenceStrategy[SampleSpec]] = [
   has_feedback_dependence,
