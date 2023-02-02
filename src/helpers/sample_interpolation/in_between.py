@@ -1,15 +1,13 @@
-from typing import TypeVar, TypeAlias, Generic, Callable, List, Optional, Iterable, Iterator, Tuple
-from itertools import chain, pairwise, islice
+from typing import TypeVar, TypeAlias, Generic, Callable
 from dataclasses import dataclass
-import numpy as np
-from enum import Enum, auto
 
 T = TypeVar('T')
+U = TypeVar('U')
 
 @dataclass
 class InBetweenParams(Generic[T]):
   from_: T
   to: T
-  step: float
+  quotient: float
 
-MakeInbetween: TypeAlias = Callable[[InBetweenParams], T]
+MakeInbetween: TypeAlias = Callable[[InBetweenParams[T]], U]
