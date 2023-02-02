@@ -49,7 +49,7 @@ def make_inbetween(params: InBetweenParams[SingleCondition|MultiCond]) -> MultiC
     ]
   )
 
-keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
+cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
   cfg_scale=7.5,
   prompt='hello',
 ), MultiCond(
@@ -66,8 +66,8 @@ keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
   )]
 )]
 
-interspersed: List[SingleCondition|MultiCond] = intersperse_linspace(
-  keyframes=keyframes,
+cond_linspace: List[SingleCondition|MultiCond] = intersperse_linspace(
+  keyframes=cond_keyframes,
   make_inbetween=make_inbetween,
   steps=3
 )
