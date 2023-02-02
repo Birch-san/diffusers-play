@@ -55,6 +55,14 @@ class ExecutionPlanBatcher(Generic[SampleSpec, ExecutionPlan]):
           )
           current_batch.clear()
           current_plan = None
+      else:
+        yield BatchSpecGeneric[ExecutionPlan](
+          execution_plan=current_plan,
+          sample_specs=current_batch,
+        )
+        current_batch.clear()
+        current_batch.append(spec)
+        current_plan = plan
     if current_batch:
       assert current_plan is not None
       yield BatchSpecGeneric[ExecutionPlan](
