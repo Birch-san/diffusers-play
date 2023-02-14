@@ -11,16 +11,20 @@ upcast_attention_models = { 'stabilityai/stable-diffusion-2-1' }
 
 laion_embed_models = { *sd2_models }
 _768_models = { *sd2_768_models }
-vparam_models = { *sd2_768_models }
+vparam_models = { *sd2_768_models, 'waifu-diffusion/wd-1-5-beta' }
 penultimate_clip_hidden_state_models = { *sd2_models }
 
 xattn_max_context_segments: Dict[str, int] = {
-  'hakurei/waifu-diffusion': 3
+  # you can try using more than this, but it was only trained on up to 3
+  'hakurei/waifu-diffusion': 3,
+  # not actually known how many context segments they used
+  'waifu-diffusion/wd-1-5-beta': 3
 }
 
-def get_clip_ckpt(model_name: str) -> ClipCheckpoint:
-  if model_name == 'hakurei/waifu-diffusion':
-    return ClipCheckpoint.Waifu
+def get_clip_ckpt(model_name: str) -> ClipCheckpoint|str:
+  match model_name:
+    case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta':
+      return model_name
   if model_name in laion_embed_models:
     return ClipCheckpoint.LAION
   return ClipCheckpoint.OpenAI

@@ -26,7 +26,7 @@ cd src/diffusers
 python setup.py install
 cd ../..
 # and everything else we missed (dunno what I did wrong)
-pip install transformers
+pip install transformers safetensors
 ```
 
 Treat yourself to ipython:

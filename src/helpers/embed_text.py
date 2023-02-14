@@ -14,11 +14,10 @@ class ClipImplementation(Enum):
 class ClipCheckpoint(Enum):
   OpenAI = auto()
   LAION = auto()
-  Waifu = auto()
 
 def get_embedder(
   impl: ClipImplementation,
-  ckpt: ClipCheckpoint,
+  ckpt: ClipCheckpoint|str,
   subtract_hidden_state_layers = 0,
   max_context_segments = 1,
   device: DeviceType = 'cpu',
@@ -37,8 +36,8 @@ def get_embedder(
           model_name = 'stabilityai/stable-diffusion-2'
           tokenizer_extra_args = {'subfolder': 'tokenizer'}
           encoder_extra_args = {'subfolder': 'text_encoder'}
-        case ClipCheckpoint.Waifu:
-          model_name = 'hakurei/waifu-diffusion'
+        case str():
+          model_name = ckpt
           tokenizer_extra_args = {'subfolder': 'tokenizer'}
           encoder_extra_args = {'subfolder': 'text_encoder'}
         case _:
@@ -68,8 +67,8 @@ def get_embedder(
         case ClipCheckpoint.LAION:
           model_name = 'ViT-H-14'
           pretrained = 'laion2b_s32b_b79k'
-        case ClipCheckpoint.Waifu:
-          raise 'OpenCLIP support not yet implemented for waifu-diffusion checkpoint'
+        case str():
+          raise f'OpenCLIP support not yet implemented for {ckpt} checkpoint'
         case _:
           raise "never heard of '{ckpt}' ClipCheckpoint."
       encoder, _, _ = open_clip.create_model_and_transforms(model_name, device=device, pretrained=pretrained)

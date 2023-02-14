@@ -59,7 +59,8 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  # 'hakurei/waifu-diffusion'
+  'waifu-diffusion/wd-1-5-beta'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -74,8 +75,10 @@ needs_vparam = model_needs.needs_vparam
 needs_penultimate_clip_hidden_state = model_needs.needs_penultimate_clip_hidden_state
 upcast_attention = model_needs.needs_upcast_attention
 
-# WD 1.4 hasn't uploaded an fp16 revision yet
-revision = None if model_name == 'hakurei/waifu-diffusion' else revision
+match model_name:
+  # WD 1.4 and 1.5 haven't uploaded fp16 revision yet
+  case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta':
+    revision = None
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
   subfolder='unet',
@@ -165,13 +168,22 @@ for path_ in [sample_path, intermediates_path]:
 log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 
 cond_scale = 7.5 if cfg_enabled else 1.
-if model_name == 'hakurei/waifu-diffusion':
-  # WD1.4 was trained on area=640**2 and no side longer than 768
-  height = 768
-  width = 640**2//height
-else:
-  width = 768 if is_768 else 512
-  height = width
+match(model_name):
+  case 'hakurei/waifu-diffusion':
+    # WD1.4 was trained on area=640**2 and no side longer than 768
+    height = 768
+    width = 640**2//height
+  case 'waifu-diffusion/wd-1-5-beta':
+    # WD1.5 was trained on area=896**2 and no side longer than 1152
+    sqrt_area=896
+    # >1 = portrait
+    # aspect_ratio = 1.357
+    aspect_ratio = 1.15
+    height = int(sqrt_area*aspect_ratio)
+    width = sqrt_area**2//height
+  case _:
+    width = 768 if is_768 else 512
+    height = width
 
 latent_scale_factor = 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
