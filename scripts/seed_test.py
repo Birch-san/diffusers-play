@@ -89,7 +89,7 @@ def embed(prompts: Prompts) -> EmbeddingAndMask:
   token_length = 2
   dims = 3
   return EmbeddingAndMask(
-    embedding=torch.arange(batch_size, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0).T.expand(-1, token_length, dims),
+    embedding=torch.arange(batch_size, dtype=torch.float32, device=device).unsqueeze(-1).unsqueeze(-1).expand(-1, token_length, dims),
     attn_mask=torch.ones(batch_size, token_length, dtype=torch.bool, device=device),
   )
 
@@ -140,9 +140,16 @@ batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batche
 for batch_ix, (plan, specs) in enumerate(batch_generator):
   seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
-  # TODO: after embedding, use prompt_instance_ixs to denormalize
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
+
+  embed_instance_ixs_flat = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
+
+  # denormalize
+  embedding = embedding.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
+  mask = mask.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
+
+  # TODO: figure out some way to have multiple unconds in the same batch at various coords
   if plan.cfg_enabled:
     uc, c = embedding.split((1, embedding.size(0)-1))
     uc_mask, c_mask = mask.split((1, mask.size(0)-1))
