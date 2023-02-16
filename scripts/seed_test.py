@@ -1,7 +1,7 @@
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
-from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt
+from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
 from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
@@ -29,17 +29,26 @@ class AdjustScale(Protocol):
 WeightedPromptAndScaleAdjuster = Tuple[WeightedPrompt, AdjustScale]
 
 def make_inbetween(params: InBetweenParams[SingleCondition|MultiCond]) -> MultiCond:
-  assert params.from_.cfg_enabled == params.to.cfg_enabled
-  cfg_scale_coeff = params.to.cfg_scale / params.from_.cfg_scale
+  assert (params.from_.cfg is None) == (params.to.cfg is None)
+  if params.from_.cfg is not None:
+    assert params.from_.cfg.uncond_prompt.text == params.to.cfg.uncond_prompt.text
+    from_scale: float = params.from_.cfg.scale
+    to_scale: float = params.to.cfg.scale
+    cfg = CFG(scale=from_scale, uncond_prompt=params.from_.cfg.uncond_prompt)
+    cfg_scale_coeff = to_scale / from_scale
+  else:
+    cfg = None
+    cfg_scale_coeff = 1.
   scale_from: AdjustScale = lambda scale_nominal, quotient: scale_nominal * (1-quotient)
   scale_to: AdjustScale = lambda scale_nominal, quotient: scale_nominal * quotient * cfg_scale_coeff
   prompts_and_scale_strategies: Iterable[WeightedPromptAndScaleAdjuster] = chain(
-    zip(params.from_.weighted_prompts, repeat(scale_from)),
-    zip(params.to.weighted_prompts, repeat(scale_to))
+    zip(params.from_.weighted_cond_prompts, repeat(scale_from)),
+    zip(params.to.weighted_cond_prompts, repeat(scale_to))
   )
+
   return MultiCond(
-    cfg_scale=params.from_.cfg_scale,
-    weighted_prompts=[
+    cfg=cfg,
+    weighted_cond_prompts=[
       WeightedPrompt(
         wp.prompt,
         scale(wp.weight, params.quotient)
@@ -48,18 +57,18 @@ def make_inbetween(params: InBetweenParams[SingleCondition|MultiCond]) -> MultiC
   )
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
-  cfg_scale=7.5,
-  prompt='hello',
+  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+  prompt=Prompt(text='hello'),
 ), MultiCond(
-  cfg_scale=7.5,
-  weighted_prompts=[WeightedPrompt(
-    prompt='man',
+  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+  weighted_cond_prompts=[WeightedPrompt(
+    prompt=Prompt(text='man'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt='bear',
+    prompt=Prompt(text='bear'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt='pig',
+    prompt=Prompt(text='pig'),
     weight=0.5,
   )]
 )]
@@ -74,9 +83,14 @@ device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
+  batch_size=len(prompts)
+  # token_length = 77
+  # dims = 768
+  token_length = 2
+  dims = 3
   return EmbeddingAndMask(
-    embedding=torch.ones(len(prompts), 77, 768, dtype=torch.float32, device=device),
-    attn_mask=torch.ones(len(prompts), 77, dtype=torch.bool, device=device),
+    embedding=torch.arange(batch_size, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0).T.expand(-1, token_length, dims),
+    attn_mask=torch.ones(batch_size, token_length, dtype=torch.bool, device=device),
   )
 
 height = 768
@@ -126,13 +140,8 @@ batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batche
 for batch_ix, (plan, specs) in enumerate(batch_generator):
   seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
-  if plan.cfg_enabled:
-    uncond_ix = len(plan.prompts_ordered)
-    prompts: List[str] = [*plan.prompts_ordered, '']
-  else:
-    prompts: List[str] = plan.prompts_ordered
   # TODO: after embedding, use prompt_instance_ixs to denormalize
-  embedding_and_mask: EmbeddingAndMask = embed(prompts)
+  embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
   if plan.cfg_enabled:
     uc, c = embedding.split((1, embedding.size(0)-1))
