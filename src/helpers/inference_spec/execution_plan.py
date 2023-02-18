@@ -6,8 +6,9 @@ from .execution_plan_batcher import PlanMergeResultGeneric
 
 @dataclass
 class CfgState:
-  # per sample: the index   (in prompt_texts_ordered) of the uncond embedding on which it depends. present when cfg enabled.
-  uncond_prompt_text_instance_ixs: List[int]
+  # per sample: within that sample's prompt_text_instance_ixs element, wthe ix at which its uncond can be found
+  uncond_instance_ixs: List[int]
+  has_empty_string_uncond: List[bool]
   scales: List[float]
 
 @dataclass
@@ -38,26 +39,27 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     prompt_texts_ordered: List[str] = []
     prompt_text_instance_ixs: List[List[int]] = []
     cfg: Optional[CfgState] = None if spec.cond_spec.cfg is None else CfgState(
-      uncond_prompt_text_instance_ixs = [],
+      uncond_instance_ixs = [],
+      has_empty_string_uncond = [],
       scales = []
     )
   
-  def register_prompt_text(prompt_text: str) -> int:
+  def register_prompt_text(prompt_text: str) -> None:
     if prompt_text not in prompt_text_to_ix:
       prompt_text_to_ix[prompt_text] = len(prompt_texts_ordered)
       prompt_texts_ordered.append(prompt_text)
     ix: int = prompt_text_to_ix[prompt_text]
-    return ix
+    sample_prompt_text_instance_ixs.append(ix)
   
   sample_prompt_text_instance_ixs: List[int] = []
   if cfg is not None:
     cfg.scales.append(spec.cond_spec.cfg.scale)
-    ix: int = register_prompt_text(spec.cond_spec.cfg.uncond_prompt.text)
-    cfg.uncond_prompt_text_instance_ixs.append(ix)
-    sample_prompt_text_instance_ixs.append(ix)
+    cfg.uncond_instance_ixs.append(len(sample_prompt_text_instance_ixs))
+    prompt_text: str = spec.cond_spec.cfg.uncond_prompt.text
+    cfg.has_empty_string_uncond.append(prompt_text == '')
+    register_prompt_text(prompt_text)
   for prompt_text in spec.cond_spec.cond_prompt_texts:
-    ix: int = register_prompt_text(prompt_text)
-    sample_prompt_text_instance_ixs.append(ix)
+    register_prompt_text(prompt_text)
   prompt_text_instance_ixs.append(sample_prompt_text_instance_ixs)
   
   plan = ExecutionPlan(

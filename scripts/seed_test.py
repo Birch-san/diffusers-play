@@ -13,7 +13,7 @@ from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 import torch
-from torch import FloatTensor
+from torch import FloatTensor, BoolTensor
 from typing import Iterable, Generator, List
 from itertools import chain, repeat
 
@@ -104,11 +104,11 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
 
-  embed_instance_ixs_flat = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
+  embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
 
   # denormalize
-  embedding = embedding.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
-  mask = mask.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
+  embedding: FloatTensor = embedding.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
+  mask: BoolTensor = mask.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
 
   # TODO: figure out some way to have multiple unconds in the same batch at various coords
   if plan.cfg is not None:
