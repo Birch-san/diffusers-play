@@ -20,6 +20,7 @@ class WeightedPrompt:
 
 class ConditionProto(Protocol):
   weighted_cond_prompts: List[WeightedPrompt]
+  cond_prompt_texts: List[str]
   prompt_texts: List[str]
 
 @dataclass
@@ -33,6 +34,10 @@ class ConditionSpec(ABC, ConditionProto):
   @property
   def uncond_prompt_texts(self) -> List[str]:
     return [] if self.cfg is None else [self.cfg.uncond_prompt.text]
+
+  @property
+  def prompt_texts(self) -> List[str]:
+    return [*self.uncond_prompt_texts, *self.cond_prompt_texts]
   
   # @abstractmethod
   # @property
@@ -61,8 +66,8 @@ class SingleCondition(ConditionSpec):
   #   return [self.prompt]
 
   @property
-  def prompt_texts(self) -> List[str]:
-    return [*self.uncond_prompt_texts, self.prompt.text]
+  def cond_prompt_texts(self) -> List[str]:
+    return [self.prompt.text]
 
   @property
   def weighted_cond_prompts(self) -> List[WeightedPrompt]:
@@ -81,8 +86,8 @@ class MultiCond(ConditionSpec):
   #   return self._weighted_prompts
 
   @property
-  def prompt_texts(self) -> List[str]:
-    return [*self.uncond_prompt_texts, *(weighted_prompt.prompt.text for weighted_prompt in self.weighted_cond_prompts)]
+  def cond_prompt_texts(self) -> List[str]:
+    return [weighted_prompt.prompt.text for weighted_prompt in self.weighted_cond_prompts]
 
 ConditionSpec.register(SingleCondition)
 ConditionSpec.register(MultiCond)

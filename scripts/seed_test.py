@@ -111,7 +111,7 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   mask = mask.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
 
   # TODO: figure out some way to have multiple unconds in the same batch at various coords
-  if plan.cfg_enabled:
+  if plan.cfg is not None:
     uc, c = embedding.split((1, embedding.size(0)-1))
     uc_mask, c_mask = mask.split((1, mask.size(0)-1))
     # SD was trained loads on an unmasked uc, so undo uc's masking
