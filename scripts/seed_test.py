@@ -14,7 +14,7 @@ from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 import torch
 from torch import FloatTensor, BoolTensor
-from typing import Iterable, Generator, List
+from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
@@ -99,7 +99,10 @@ batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
 for batch_ix, (plan, specs) in enumerate(batch_generator):
-  seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
+  # explicit type cast to help IDE infer type
+  plan: ExecutionPlan = plan
+  specs: List[SampleSpec] = specs
+  seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
