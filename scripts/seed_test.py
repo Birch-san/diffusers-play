@@ -109,15 +109,3 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   # denormalize
   embedding: FloatTensor = embedding.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
   mask: BoolTensor = mask.index_select(0, torch.tensor(embed_instance_ixs_flat, device=device))
-
-  # TODO: figure out some way to have multiple unconds in the same batch at various coords
-  if plan.cfg is not None:
-    uc, c = embedding.split((1, embedding.size(0)-1))
-    uc_mask, c_mask = mask.split((1, mask.size(0)-1))
-    # SD was trained loads on an unmasked uc, so undo uc's masking
-    uc_mask = (torch.arange(uc_mask.size(1), device=device) < 77).unsqueeze(0)
-    mask = torch.cat([uc_mask, c_mask])
-  else:
-    uc, c = None, embedding
-    uc_mask, c_mask = None, mask
-  pass

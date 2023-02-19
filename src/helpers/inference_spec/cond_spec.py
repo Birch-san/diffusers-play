@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
 from typing import List, Protocol, Optional
 
@@ -27,59 +27,19 @@ class WeightedPrompt:
 
 class ConditionProto(Protocol):
   weighted_cond_prompts: List[WeightedPrompt]
-  cond_prompt_texts: List[str]
-  cond_prompt_weights: List[float]
-  prompt_texts: List[str]
 
 @dataclass
 class ConditionSpec(ABC, ConditionProto):
   cfg: Optional[CFG]
 
-  # @property
-  # def cfg_enabled(self) -> bool:
-  #   return self.cfg.scale > 1.0
-
   @property
   def uncond_prompt_texts(self) -> List[str]:
     return [] if self.cfg is None else [self.cfg.uncond_prompt.text]
 
-  @property
-  def prompt_texts(self) -> List[str]:
-    return [*self.uncond_prompt_texts, *self.cond_prompt_texts]
-  
-  # @abstractmethod
-  # @property
-  # def cond_prompts(self) -> List[str]: ...
-  # @property
-  # def prompts(self) -> List[str]:
-  #   if self.cfg_enabled:
-  #     return self.cond_prompts
-  #   return ['', *self.cond_prompts]
-
-  # @property
-  # @abstractmethod
-  # def weighted_prompts(self) -> List[WeightedPrompt]: ...
-
-  # @property
-  # @abstractmethod
-  # def prompts(self) -> List[str]: ...
-    
 
 @dataclass
 class SingleCondition(ConditionSpec):
   prompt: Prompt
-  
-  # @property
-  # def cond_prompts(self) -> List[str]:
-  #   return [self.prompt]
-
-  @property
-  def cond_prompt_texts(self) -> List[str]:
-    return [self.prompt.text]
-
-  @property
-  def cond_prompt_weights(self) -> List[float]:
-    return [1.]
 
   @property
   def weighted_cond_prompts(self) -> List[WeightedPrompt]:
@@ -92,18 +52,6 @@ class SingleCondition(ConditionSpec):
 @dataclass
 class MultiCond(ConditionSpec):
   weighted_cond_prompts: List[WeightedPrompt]
-
-  # @property
-  # def weighted_prompts(self) -> List[WeightedPrompt]:
-  #   return self._weighted_prompts
-
-  @property
-  def cond_prompt_texts(self) -> List[str]:
-    return [weighted_prompt.prompt.text for weighted_prompt in self.weighted_cond_prompts]
-
-  @property
-  def cond_prompt_weights(self) -> List[float]:
-    return [weighted_prompt.weight for weighted_prompt in self.weighted_cond_prompts]
 
 ConditionSpec.register(SingleCondition)
 ConditionSpec.register(MultiCond)
