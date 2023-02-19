@@ -362,6 +362,8 @@ with no_grad():
       # callback=log_intermediates,
     ).to(vae_dtype)
     del denoiser
+    if device.type == 'cuda':
+      torch.cuda.empty_cache()
     pil_images: List[Image.Image] = latents_to_pils(latents)
     del latents
 
