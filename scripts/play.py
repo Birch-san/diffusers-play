@@ -5,14 +5,14 @@ from helpers.brownian_tree_mps_fix import reassuring_message
 from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
-from helpers.cfg_denoiser import Denoiser, DenoiserFactory
+from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 print(reassuring_message) # avoid "unused" import :P
 print(reassuring_message_2)
 
 import torch
-from torch import Tensor, no_grad, zeros, FloatTensor
+from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
@@ -32,17 +32,17 @@ from helpers.model_db import get_model_needs, ModelNeeds
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
-from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition
+from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
 from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
 from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
-from helpers.inference_spec.spec_dependence_checker import SpecDependenceChecker, CheckSpecDependenceStrategy
-from helpers.inference_spec.feedback_spec_dependence_strategy import has_feedback_dependence
+from helpers.sample_interpolation.make_in_between import make_inbetween
+from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
 from itertools import chain, repeat
 
-from typing import List, Generator, Iterable
+from typing import List, Generator, Iterable, Optional
 from PIL import Image
 import time
 
@@ -109,7 +109,7 @@ sampling_dtype: torch.dtype = torch.float32
 # sampling_dtype: torch.dtype = torch_dtype
 alphas_cumprod: Tensor = get_alphas_cumprod(get_alphas(get_betas(device=device))).to(dtype=sampling_dtype)
 unet_k_wrapped = DiffusersSD2Denoiser(unet, alphas_cumprod, sampling_dtype) if needs_vparam else DiffusersSDDenoiser(unet, alphas_cumprod, sampling_dtype)
-denoiser_factory = DenoiserFactory(unet_k_wrapped)
+denoiser_factory = BatchDenoiserFactory(unet_k_wrapped)
 
 vae_dtype = torch_dtype
 vae_revision = revision
@@ -138,7 +138,7 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.CudaMastering
+schedule_template = KarrasScheduleTemplate.Searching
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,
@@ -200,33 +200,60 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
+interp_steps = 8
+
 max_batch_size = 2
-n_rand_seeds = 1
+n_rand_seeds = 0
 seeds: Iterable[int] = chain(
-  (
-    2178792736,
-  ),
+  repeat(2178792736, interp_steps),
   (get_seed() for _ in range(n_rand_seeds))
 )
 
-prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
-conditions: Iterable[ConditionSpec] = repeat(SingleCondition(cfg_scale=7.5, prompt=prompt))
+cond_keyframes: List[SingleCondition|MultiCond] = [
+  SingleCondition(
+    cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+    # cfg=None,
+    prompt=Prompt(text='beautiful, 1girl, kirisame marisa, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  ),
+  SingleCondition(
+    cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+    # cfg=None,
+    prompt=Prompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  ),
+  # MultiCond(
+  #   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+  #   weighted_cond_prompts=[WeightedPrompt(
+  #     prompt=Prompt(text='man'),
+  #     weight=0.5,
+  #   ), WeightedPrompt(
+  #     prompt=Prompt(text='bear'),
+  #     weight=0.5,
+  #   ), WeightedPrompt(
+  #     prompt=Prompt(text='pig'),
+  #     weight=0.5,
+  #   )]
+  # )
+]
+
+conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
+  keyframes=cond_keyframes,
+  make_inbetween=make_inbetween,
+  steps=interp_steps,
+)
+
+# prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
+# conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
+#   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+#   prompt=Prompt(text=prompt),
+# ))
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
   cond_spec=cond,
 ) for seed, cond in zip(seeds, conditions))
 
-dependence_strategies: List[CheckSpecDependenceStrategy[SampleSpec]] = [
-  has_feedback_dependence,
-]
-spec_dependence_checker=SpecDependenceChecker[SampleSpec](
-  strategies=dependence_strategies,
-)
-
 batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
   max_batch_size=max_batch_size,
   make_execution_plan=make_execution_plan,
-  depends_on_prev_sample=spec_dependence_checker.has_dependence,
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
@@ -240,25 +267,43 @@ batch_count=0
 with no_grad():
   batch_tic = time.perf_counter()
   for batch_ix, (plan, specs) in enumerate(batch_generator):
+    # explicit type cast to help IDE infer type
+    plan: ExecutionPlan = plan
+    specs: List[SampleSpec] = specs
+
     batch_count += 1
     batch_sample_count = len(specs)
-    seeds: List[int] = list(map(lambda spec: spec.latent_spec.seed, specs))
+    seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
     latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
-    embedding_and_mask: EmbeddingAndMask = embed(plan.prompts)
+    embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
     embedding, mask = embedding_and_mask
-    if plan.cfg_enabled:
-      uc, c = embedding.split((1, embedding.size(0)-1))
-      uc_mask, c_mask = mask.split((1, mask.size(0)-1))
-      # SD was trained loads on an unmasked uc, so undo uc's masking
-      uc_mask = (torch.arange(uc_mask.size(1), device=device) < 77).unsqueeze(0)
-      mask = torch.cat([uc_mask, c_mask])
+
+    embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
+    # denormalize
+    embedding: FloatTensor = embedding.index_select(0, tensor(embed_instance_ixs_flat, device=device))
+    mask: BoolTensor = mask.index_select(0, tensor(embed_instance_ixs_flat, device=device))
+
+    # per sample: quantity of conditions upon which it should be denoised
+    conds_per_prompt: List[int] = [len(sample_ixs) for sample_ixs in plan.prompt_text_instance_ixs]
+    conds_per_prompt_tensor: LongTensor = tensor(conds_per_prompt, dtype=torch.long, device=device)
+    if plan.cfg is None:
+      uncond_ixs = None
+      cfg_scales = None
     else:
-      uc, c = None, embedding
-    
-    if uc is not None:
-      uc = uc.repeat(batch_sample_count, 1, 1)
-    c = c.repeat(batch_sample_count, 1, 1)
-    mask = mask.repeat_interleave(batch_sample_count, 0)
+      first_cond_ix_per_prompt: LongTensor = conds_per_prompt_tensor.roll(1).index_put(
+        indices=[torch.zeros([1], dtype=torch.long, device=device)],
+        values=torch.zeros([1], dtype=torch.long, device=device),
+      ).cumsum(0)
+      uncond_ixs: LongTensor = first_cond_ix_per_prompt + tensor(plan.cfg.uncond_instance_ixs, dtype=torch.long, device=device)
+      # SD was trained loads on unmasked empty-string uncond, so undo uc mask on any empty-string uncond
+      empty_string_uncond_ixs: LongTensor = uncond_ixs.masked_select(tensor(plan.cfg.has_empty_string_uncond, dtype=torch.bool, device=device))
+      unmasked_clip_segment: BoolTensor = arange(mask.size(1), device=device) < 77
+      mask: BoolTensor = mask.index_put(
+        indices=[empty_string_uncond_ixs],
+        values=unmasked_clip_segment,
+      )
+      cfg_scales: FloatTensor = tensor(plan.cfg.scales, dtype=sampling_dtype, device=device)
+    cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
     
     match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
@@ -267,8 +312,15 @@ with no_grad():
       case AttentionMode.Xformers | AttentionMode.Chunked:
         mask = None
 
-    # TODO: support varied CFG scale within a batch
-    denoiser: Denoiser = denoiser_factory(uncond=uc, cond=c, cond_scale=specs[0].cond_spec.cfg_scale, attention_mask=mask)
+    denoiser: Denoiser = denoiser_factory(
+      cross_attention_conds=embedding,
+      cross_attention_mask=mask,
+      conds_per_prompt=conds_per_prompt_tensor,
+      cond_weights=cond_weights,
+      uncond_ixs=uncond_ixs,
+      cfg_scales=cfg_scales,
+    )
+
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
       sigma_min=sigma_min,
