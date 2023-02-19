@@ -19,7 +19,7 @@ class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
     encoder_hidden_states: Tensor,
     return_dict: bool = True,
     attention_mask: Optional[BoolTensor] = None,
-    ) -> Tensor:
+  ) -> Tensor:
     # cross_attn_mask is a proposal from my xattn_mask_2 branch of diffusers:
     # https://github.com/huggingface/diffusers/issues/1890
     # don't pass it in if we don't have to, to ensure compatibility with main branch of diffusers
