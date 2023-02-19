@@ -49,6 +49,13 @@ import time
 half = True
 cfg_enabled = True
 
+# hakurei/waifu-diffusion
+# can refer to both 1.3 and 1.4, depending on commit
+# latest main points at 1.4
+# latest fp16 points at 1.3
+# when True: we make use of this mismatch, to deliberately select 1.3 by picking fp16 revision
+wd_prefer_1_3 = True
+
 revision=None
 torch_dtype=None
 if half:
@@ -72,12 +79,18 @@ model_needs: ModelNeeds = get_model_needs(model_name, torch.float32 if torch_dty
 
 is_768 = model_needs.is_768
 needs_vparam = model_needs.needs_vparam
-needs_penultimate_clip_hidden_state = model_needs.needs_penultimate_clip_hidden_state
+if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
+  needs_penultimate_clip_hidden_state = False
+else:
+  needs_penultimate_clip_hidden_state = model_needs.needs_penultimate_clip_hidden_state
 upcast_attention = model_needs.needs_upcast_attention
 
 match model_name:
   # WD 1.4 and 1.5 haven't uploaded fp16 revision yet
-  case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta':
+  case 'hakurei/waifu-diffusion':
+    if not wd_prefer_1_3:
+      revision = None
+  case 'waifu-diffusion/wd-1-5-beta':
     revision = None
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
@@ -127,7 +140,10 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 
 clip_impl = ClipImplementation.HF
-clip_ckpt: ClipCheckpoint = model_needs.clip_ckpt
+if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
+  clip_ckpt = ClipCheckpoint.OpenAI
+else:
+  clip_ckpt: ClipCheckpoint = model_needs.clip_ckpt
 clip_subtract_hidden_state_layers = 1 if needs_penultimate_clip_hidden_state else 0
 embed: Embed = get_embedder(
   impl=clip_impl,
@@ -170,9 +186,13 @@ log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 cond_scale = 7.5 if cfg_enabled else 1.
 match(model_name):
   case 'hakurei/waifu-diffusion':
-    # WD1.4 was trained on area=640**2 and no side longer than 768
-    height = 768
-    width = 640**2//height
+    if wd_prefer_1_3:
+      height = 512
+      width = 512**2//height
+    else:
+      # WD1.4 was trained on area=640**2 and no side longer than 768
+      height = 768
+      width = 640**2//height
   case 'waifu-diffusion/wd-1-5-beta':
     # WD1.5 was trained on area=896**2 and no side longer than 1152
     sqrt_area=896
