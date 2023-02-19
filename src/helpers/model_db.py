@@ -3,16 +3,12 @@ from helpers.embed_text import ClipCheckpoint
 import torch
 from typing import Dict
 
-sd2_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
-sd2_base_models = { 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
-sd2_models = { *sd2_768_models, *sd2_base_models }
 # models where if you use 16-bit computation in the Unet: you will get NaN latents. prefer to run attention in 32-bit
 upcast_attention_models = { 'stabilityai/stable-diffusion-2-1' }
-
-laion_embed_models = { *sd2_models }
-_768_models = { *sd2_768_models }
-vparam_models = { *sd2_768_models, 'waifu-diffusion/wd-1-5-beta' }
-penultimate_clip_hidden_state_models = { *sd2_models }
+laion_embed_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
+_768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
+vparam_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'waifu-diffusion/wd-1-5-beta' }
+penultimate_clip_hidden_state_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base', 'hakurei/waifu-diffusion', 'waifu-diffusion/wd-1-5-beta' }
 
 xattn_max_context_segments: Dict[str, int] = {
   # you can try using more than this, but it was only trained on up to 3
