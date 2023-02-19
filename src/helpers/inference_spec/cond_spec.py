@@ -11,6 +11,13 @@ class Prompt:
 @dataclass
 class CFG:
   scale: float
+  # we deliberately avoid implementing support for uncond to be a plurality of weighted prompts.
+  # it's not impossible to do, but so obscure as to not be worth it.
+  # CFG is *already* weird
+  # "negative prompting" is weird on top of weird
+  # "negative multi-prompting"? now that's a step too far
+  # maybe you can get a similar (identical?) effect by creating a
+  # ConditionProto#weighted_cond_prompts element with a negative weight
   uncond_prompt: Prompt = field(default_factory=Prompt)
 
 @dataclass
@@ -21,6 +28,7 @@ class WeightedPrompt:
 class ConditionProto(Protocol):
   weighted_cond_prompts: List[WeightedPrompt]
   cond_prompt_texts: List[str]
+  cond_prompt_weights: List[float]
   prompt_texts: List[str]
 
 @dataclass
@@ -70,6 +78,10 @@ class SingleCondition(ConditionSpec):
     return [self.prompt.text]
 
   @property
+  def cond_prompt_weights(self) -> List[float]:
+    return [1.]
+
+  @property
   def weighted_cond_prompts(self) -> List[WeightedPrompt]:
     return [WeightedPrompt(
       prompt=self.prompt,
@@ -88,6 +100,10 @@ class MultiCond(ConditionSpec):
   @property
   def cond_prompt_texts(self) -> List[str]:
     return [weighted_prompt.prompt.text for weighted_prompt in self.weighted_cond_prompts]
+
+  @property
+  def cond_prompt_weights(self) -> List[float]:
+    return [weighted_prompt.weight for weighted_prompt in self.weighted_cond_prompts]
 
 ConditionSpec.register(SingleCondition)
 ConditionSpec.register(MultiCond)
