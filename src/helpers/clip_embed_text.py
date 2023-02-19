@@ -52,7 +52,8 @@ def get_embedder(
       add_special_tokens=False,
     )
     # you can see how the words get split into tokens like so:
-    # tokenizer.convert_ids_to_tokens([tokenizer.bos_token_id, *tokens.input_ids[1][:tokens.length[1]], tokenizer.eos_token_id])
+    # [tokenizer.convert_ids_to_tokens([tokenizer.bos_token_id, *tokens.input_ids[ix][:tokens.length[ix]], tokenizer.eos_token_id]) for ix in range(len(tokens.input_ids))]
+    # tokenizer.convert_ids_to_tokens(tokenizer('hey').input_ids)
     device=text_encoder.device
     text_input_ids: LongTensor = tokens.input_ids.to(device)
     prompt_count = text_input_ids.size(0)
