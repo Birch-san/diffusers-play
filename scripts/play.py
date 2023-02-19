@@ -275,8 +275,10 @@ with no_grad():
     batch_sample_count = len(specs)
     seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
     latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
+    del specs
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
     embedding, mask = embedding_and_mask
+    del embedding_and_mask
 
     embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
     # denormalize
@@ -304,6 +306,7 @@ with no_grad():
       )
       cfg_scales: FloatTensor = tensor(plan.cfg.scales, dtype=sampling_dtype, device=device)
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
+    del plan
     
     match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
@@ -320,6 +323,7 @@ with no_grad():
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
     )
+    del embedding, mask, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales
 
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
@@ -338,7 +342,9 @@ with no_grad():
       # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
       # callback=log_intermediates,
     ).to(vae_dtype)
+    del denoiser
     pil_images: List[Image.Image] = latents_to_pils(latents)
+    del latents
 
     sample_time=time.perf_counter()-tic
     sum_of_batch_times += sample_time
@@ -353,6 +359,9 @@ with no_grad():
     base_count = len(os.listdir(sample_path))
     for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
       image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
+    del pil_images
+    if device.type == 'cuda':
+      torch.cuda.empty_cache()
 
 total_time=time.perf_counter()-batch_tic
 
