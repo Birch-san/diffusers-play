@@ -138,7 +138,7 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.Searching
+schedule_template = KarrasScheduleTemplate.CudaMastering
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,
@@ -200,25 +200,43 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-interp_steps = 8
-
-max_batch_size = 2
+max_batch_size = 8
 n_rand_seeds = 0
 seeds: Iterable[int] = chain(
-  repeat(2178792736, interp_steps),
+  repeat(2178792736),
   (get_seed() for _ in range(n_rand_seeds))
 )
 
+uncond_prompt = Prompt(text='lowres, bad anatomy, bad hands, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
+
 cond_keyframes: List[SingleCondition|MultiCond] = [
   SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-    # cfg=None,
-    prompt=Prompt(text='beautiful, 1girl, kirisame marisa, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+    # flandre scarlet = 3 tokens
+    # touhou = 2 tokens
+    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
   ),
   SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-    # cfg=None,
+    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+    # kirisame marisa = 3 tokens
+    # touhou = 2 tokens
+    prompt=Prompt(text='beautiful, 1girl, kirisame marisa touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  ),
+  SingleCondition(
+    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+    # hakurei reimu = 5 tokens
     prompt=Prompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  ),
+  SingleCondition(
+    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+    # konpaku youmu = 5 tokens
+    prompt=Prompt(text='beautiful, 1girl, konpaku youmu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  ),
+  SingleCondition(
+    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+    # flandre scarlet = 3 tokens
+    # touhou = 2 tokens
+    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
   ),
   # MultiCond(
   #   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
@@ -238,7 +256,7 @@ cond_keyframes: List[SingleCondition|MultiCond] = [
 conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
   keyframes=cond_keyframes,
   make_inbetween=make_inbetween,
-  steps=interp_steps,
+  steps=8,
 )
 
 # prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
