@@ -322,6 +322,7 @@ with no_grad():
         indices=[empty_string_uncond_ixs],
         values=unmasked_clip_segment,
       )
+      del empty_string_uncond_ixs, unmasked_clip_segment
       cfg_scales: FloatTensor = tensor(plan.cfg.scales, dtype=sampling_dtype, device=device)
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
     del plan
