@@ -37,6 +37,10 @@ class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
 
 @dataclass
 class BatchNoCFGDenoiser(AbstractBatchDenoiser):
+  """
+  If you're submitting multi-cond to this:
+  ensure prompt weights add up to 1.0.
+  """
   def __post_init__(self):
     super().__post_init__()
     self.cond_summation_ixs = torch.arange(self.batch_size, device=self.conds_per_prompt.device).repeat_interleave(self.conds_per_prompt, dim=0).reshape(-1, 1, 1, 1)
