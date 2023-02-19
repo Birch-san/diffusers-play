@@ -200,70 +200,85 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-max_batch_size = 8
+max_batch_size = 10
 n_rand_seeds = 0
 seeds: Iterable[int] = chain(
-  repeat(2178792736),
+  repeat(1066694885),
   (get_seed() for _ in range(n_rand_seeds))
 )
 
-uncond_prompt = Prompt(text='lowres, bad anatomy, bad hands, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
+uncond_prompt = Prompt(text='lowres, bad anatomy, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
 
+prompt_text_common: str = 'looking at viewer, hair between eyes, floating hair, touhou project, best quality, best aesthetic'
 cond_keyframes: List[SingleCondition|MultiCond] = [
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # flandre scarlet = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'kirisame marisa touhou, carnelian, 1girl, watercolor (medium), traditional media, full body, outdoors, {prompt_text_common} small breasts, black dress, blonde hair, yellow eyes, black footwear, shoes, white socks, light smile, kneehighs, puffy short sleeves, witch hat, white shirt, buttons, apron, white apron, waist apron, long hair, detailed hair, bare arms, hat bow, bangs, single braid, hair bow, white bow, jumping, hands outstretched, palms'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
   ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # kirisame marisa = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, kirisame marisa touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'hakurei reimu, carnelian, 1girl, watercolor (medium), traditional media, full body, outdoors, {prompt_text_common}, waifu, small breasts, red dress, black hair, red eyes, brown footwear, shoes, white socks, glaring, bare shoulders, wide sleeves, hair bow, yellow ascot, hair ribbon, red ribbon, hair tubes, long hair, detailed hair, bare arms, midriff peek, detached sleeves, knees together feet apart, own hands together'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
   ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # hakurei reimu = 5 tokens
-    prompt=Prompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'konpaku youmu, sazanami mio, 1girl, marker (medium), colored pencil (medium), full body, outdoors, {prompt_text_common}, from side, small breasts, green skirt, silver hair, green eyes, black footwear, shoes, white socks, short sleeves, hair bow, hairband, hair ribbon, neck ribbon, short hair, detailed hair, bare arms, puffy short sleeves, white shirt, vest, bangs, miniskirt, green vest, black bow, black hairband, blunt bangs, blush, parted lips, long legs, sun'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
   ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # konpaku youmu = 5 tokens
-    prompt=Prompt(text='beautiful, 1girl, konpaku youmu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'flandre scarlet, reddizen, 1girl, watercolor (medium), painting (medium), full body, outdoors, {prompt_text_common}, small breasts, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, smile, solo, vest, white headwear, white socks, shoes, red footwear, white shirt, yellow ascot, standing, waifu, hands on hips, knees together feet apart, bare legs, crystal'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
   ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # flandre scarlet = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'alice margatroid, sazanami mio, 1girl, full body, outdoors, {prompt_text_common}, medium breasts, ascot, blonde hair, sash, closed mouth, hair between eyes, red hairband, looking at viewer, medium hair, puffy short sleeves, blue eyes, cross-laced footwear, brown footwear, shoes, red ascot, frills, frilled sash, frilled dress, frilled ascot, capelet, white capelet, pantyhose, black pantyhose, bare arms, boots, aurora, light smile'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
   ),
-  # MultiCond(
-  #   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-  #   weighted_cond_prompts=[WeightedPrompt(
-  #     prompt=Prompt(text='man'),
-  #     weight=0.5,
-  #   ), WeightedPrompt(
-  #     prompt=Prompt(text='bear'),
-  #     weight=0.5,
-  #   ), WeightedPrompt(
-  #     prompt=Prompt(text='pig'),
-  #     weight=0.5,
-  #   )]
-  # )
+  MultiCond(
+    cfg=None,
+    weighted_cond_prompts=[WeightedPrompt(
+      prompt=Prompt(text=f'kirisame marisa touhou, carnelian, 1girl, watercolor (medium), traditional media, full body, outdoors, {prompt_text_common} small breasts, black dress, blonde hair, yellow eyes, black footwear, shoes, white socks, light smile, kneehighs, puffy short sleeves, witch hat, white shirt, buttons, apron, white apron, waist apron, long hair, detailed hair, bare arms, hat bow, bangs, single braid, hair bow, white bow, jumping, hands outstretched, palms'),
+      weight=5.,
+    ), WeightedPrompt(
+      prompt=uncond_prompt,
+      weight=-4,
+    )]
+  ),
 ]
 
 conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
   keyframes=cond_keyframes,
   make_inbetween=make_inbetween,
-  steps=8,
+  steps=30,
 )
 
-# prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
-# conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
-#   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-#   prompt=Prompt(text=prompt),
-# ))
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
   cond_spec=cond,
