@@ -40,14 +40,13 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
-from itertools import chain, repeat
+from itertools import chain, repeat, cycle
 
 from typing import List, Generator, Iterable, Optional
 from PIL import Image
 import time
 
 half = True
-cfg_enabled = True
 
 # hakurei/waifu-diffusion
 # can refer to both 1.3 and 1.4, depending on commit
@@ -142,6 +141,7 @@ latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
   clip_ckpt = ClipCheckpoint.OpenAI
+  max_context_segments=1
 else:
   clip_ckpt: ClipCheckpoint = model_needs.clip_ckpt
 clip_subtract_hidden_state_layers = 1 if needs_penultimate_clip_hidden_state else 0
@@ -183,7 +183,6 @@ for path_ in [sample_path, intermediates_path]:
   os.makedirs(path_, exist_ok=True)
 log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
 
-cond_scale = 7.5 if cfg_enabled else 1.
 match(model_name):
   case 'hakurei/waifu-diffusion':
     if wd_prefer_1_3:
