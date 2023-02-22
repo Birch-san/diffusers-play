@@ -9,13 +9,15 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
+from helpers.sample_interpolation.slerp import slerp
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 import torch
-from torch import FloatTensor, BoolTensor
+from torch import FloatTensor, BoolTensor, tensor
 from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
+import numpy as np
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
@@ -42,6 +44,12 @@ cond_linspace: List[SingleCondition|MultiCond] = intersperse_linspace(
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
+
+start = tensor([1,1],dtype=torch.float16,device=device)
+end = tensor([2,0],dtype=torch.float16,device=device)
+s = [
+  slerp(t, start, end) for t in np.linspace(start=0, stop=1, num=4, endpoint=True)
+]
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
   batch_size=len(prompts)
