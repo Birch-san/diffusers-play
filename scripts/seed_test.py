@@ -14,7 +14,7 @@ from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 import torch
-from torch import FloatTensor, BoolTensor, tensor
+from torch import FloatTensor, BoolTensor, tensor, linspace
 from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
 import numpy as np
@@ -47,9 +47,9 @@ device = torch.device(device_type)
 
 start = tensor([1,1],dtype=torch.float16,device=device)
 end = tensor([2,0],dtype=torch.float16,device=device)
-s = [
-  slerp(t, start, end) for t in np.linspace(start=0, stop=1, num=4, endpoint=True)
-]
+# s = [
+#   slerp(t, start, end) for t in np.linspace(start=0, stop=1, num=4, endpoint=True)
+# ]
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
   batch_size=len(prompts)
@@ -114,6 +114,16 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
+  # s = slerp(embedding[1], embedding[2], 0.5)
+  frank: FloatTensor = torch.stack([
+    embedding[0][0],
+    embedding[1][1],
+  ])
+  frank2: FloatTensor = torch.cat([
+    embedding[2,:,:2],
+    embedding[3,:,2:],
+  ],dim=-1)
+  s = slerp(frank, frank2, linspace(start=0., end=1., steps=4, device=embedding.device, dtype=embedding.dtype).unsqueeze(-1))
 
   embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
 
