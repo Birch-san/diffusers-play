@@ -1,4 +1,4 @@
-from torch import FloatTensor, LongTensor, Tensor, lerp, zeros_like, Size
+from torch import FloatTensor, LongTensor, Tensor, Size, lerp, zeros_like
 from torch.linalg import norm
 
 # adapted to PyTorch from:
@@ -46,18 +46,20 @@ def slerp(v0: FloatTensor, v1: FloatTensor, t: float|FloatTensor, DOT_THRESHOLD=
     gotta_lerp: LongTensor = dot_mag.isnan() | (dot_mag > DOT_THRESHOLD)
     can_slerp: LongTensor = ~gotta_lerp
 
-    v0_l: FloatTensor = v0.masked_select(gotta_lerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v0.dim()-2), v0.size(-1)))
-    v1_l: FloatTensor = v1.masked_select(gotta_lerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-2), v1.size(-1)))
-
-    lerped: FloatTensor = lerp(v0_l, v1_l, t)
-
     t_batch_dim_count: int = max(0, t.dim()-v0.dim()) if isinstance(t, Tensor) else 0
     t_batch_dims: Size = t.shape[:t_batch_dim_count] if isinstance(t, Tensor) else Size([])
     out: FloatTensor = zeros_like(v0.expand(*t_batch_dims, *[-1]*v0.dim()))
-    out: FloatTensor = out.masked_scatter_(gotta_lerp.unsqueeze(-1).expand(*t_batch_dims, *gotta_lerp.shape, 1), lerped)
 
-    # if no elements are slerpable, our vectors become 0-dimensional,
-    # preventing broadcasting of arithmetic
+    # if no elements are lerpable, our vectors become 0-dimensional, preventing broadcasting
+    if gotta_lerp.any():
+        v0_l: FloatTensor = v0.masked_select(gotta_lerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v0.dim()-2), v0.size(-1)))
+        v1_l: FloatTensor = v1.masked_select(gotta_lerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-2), v1.size(-1)))
+
+        lerped: FloatTensor = lerp(v0_l, v1_l, t)
+    
+        out: FloatTensor = out.masked_scatter_(gotta_lerp.unsqueeze(-1).expand(*t_batch_dims, *gotta_lerp.shape, 1), lerped)
+
+    # if no elements are slerpable, our vectors become 0-dimensional, preventing broadcasting
     if can_slerp.any():
         v0_s: FloatTensor = v0.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v0.dim()-2), v0.size(-1)))
         v1_s: FloatTensor = v1.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-2), v1.size(-1)))
