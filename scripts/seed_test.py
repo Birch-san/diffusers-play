@@ -116,14 +116,26 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   embedding, mask = embedding_and_mask
   # s = slerp(embedding[1], embedding[2], 0.5)
   frank: FloatTensor = torch.stack([
-    embedding[0][0],
-    embedding[1][1],
-  ])
-  frank2: FloatTensor = torch.cat([
-    embedding[2,:,:2],
-    embedding[3,:,2:],
-  ],dim=-1)
-  s = slerp(frank, frank2, linspace(start=0., end=1., steps=4, device=embedding.device, dtype=embedding.dtype).unsqueeze(-1))
+    torch.stack([
+      embedding[0][0],
+      embedding[1][1],
+    ]),
+    torch.stack([
+      embedding[1][0],
+      embedding[2][0],
+    ]),
+  ], dim=0)
+  frank2: FloatTensor = torch.stack([
+    torch.cat([
+      embedding[2,:,:2],
+      embedding[3,:,2:],
+    ],dim=-1),
+    torch.cat([
+      embedding[0,:,:2],
+      embedding[1,:,2:],
+    ],dim=-1),
+  ], dim=0)
+  s = slerp(frank, frank2, linspace(start=0., end=1., steps=4, device=embedding.device, dtype=embedding.dtype).unflatten(0, (-1, *[1]* embedding.dim())))
 
   embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
 
