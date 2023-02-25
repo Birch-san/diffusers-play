@@ -17,7 +17,6 @@ import torch
 from torch import FloatTensor, BoolTensor, tensor, linspace
 from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
-import numpy as np
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
@@ -45,11 +44,10 @@ cond_linspace: List[SingleCondition|MultiCond] = intersperse_linspace(
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
-start = tensor([1,1],dtype=torch.float16,device=device)
-end = tensor([2,0],dtype=torch.float16,device=device)
-# s = [
-#   slerp(t, start, end) for t in np.linspace(start=0, stop=1, num=4, endpoint=True)
-# ]
+start=tensor([0,0], dtype=torch.float16, device=device)
+end=tensor([1,1], dtype=torch.float16, device=device)
+time=tensor([0.5], dtype=torch.float16, device=device)
+s = slerp(start, end, time)
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
   batch_size=len(prompts)
