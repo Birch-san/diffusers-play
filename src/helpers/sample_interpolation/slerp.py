@@ -5,9 +5,9 @@ from torch.linalg import norm
 # https://gist.github.com/dvschultz/3af50c40df002da3b751efab1daddf2c
 # most of the extra complexity is to support:
 # - many-dimensional vectors
-# - v0 or v1 with last dim all zeroes, or v0 and v1 which are approximately colinear
-#   - we fall back to lerp()
-#   - we do so without conditions, flow control or Python-land loops
+# - v0 or v1 with last dim all zeroes, or v0 ~colinear with v1
+#   - falls back to lerp()
+#   - conditional logic implemented with parallelism rather than Python loops
 # - many-dimensional tensor for t
 #   - you can ask for batches of slerp outputs by making t more-dimensional than the vectors
 #   -   slerp(
@@ -51,25 +51,29 @@ def slerp(v0: FloatTensor, v1: FloatTensor, t: float|FloatTensor, DOT_THRESHOLD=
 
     lerped: FloatTensor = lerp(v0_l, v1_l, t)
 
-    v0_s: FloatTensor = v0.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v0.dim()-2), v0.size(-1)))
-    v1_s: FloatTensor = v1.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-2), v1.size(-1)))
-    dot_s: FloatTensor = dot.masked_select(can_slerp).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-1)))
-
-    # Calculate initial angle between v0 and v1
-    theta_0: FloatTensor = dot_s.arccos()
-    sin_theta_0: FloatTensor = theta_0.sin()
-    # Angle at timestep t
-    theta_t: FloatTensor = theta_0 * t
-    sin_theta_t: FloatTensor = theta_t.sin()
-    # Finish the slerp algorithm
-    s0: FloatTensor = (theta_0 - theta_t).sin() / sin_theta_0
-    s1: FloatTensor = sin_theta_t / sin_theta_0
-    slerped: FloatTensor = s0 * v0_s + s1 * v1_s
-
     t_batch_dim_count: int = max(0, t.dim()-v0.dim()) if isinstance(t, Tensor) else 0
-    t_batch_dims: Size = t.shape[:t_batch_dim_count] if isinstance(t, Tensor) else Size()
+    t_batch_dims: Size = t.shape[:t_batch_dim_count] if isinstance(t, Tensor) else Size([])
     out: FloatTensor = zeros_like(v0.expand(*t_batch_dims, *[-1]*v0.dim()))
-    out: FloatTensor = out.masked_scatter_(gotta_lerp.expand(*t_batch_dims, *gotta_lerp.shape).unsqueeze(-1), lerped)
-    out: FloatTensor = out.masked_scatter_(can_slerp.expand(*t_batch_dims, *can_slerp.shape).unsqueeze(-1), slerped)
+    out: FloatTensor = out.masked_scatter_(gotta_lerp.unsqueeze(-1).expand(*t_batch_dims, *gotta_lerp.shape, 1), lerped)
+
+    # if no elements are slerpable, our vectors become 0-dimensional,
+    # preventing broadcasting of arithmetic
+    if can_slerp.any():
+        v0_s: FloatTensor = v0.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v0.dim()-2), v0.size(-1)))
+        v1_s: FloatTensor = v1.masked_select(can_slerp.unsqueeze(-1)).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-2), v1.size(-1)))
+        dot_s: FloatTensor = dot.masked_select(can_slerp).unflatten(dim=-1, sizes=(-1, *[1]*(v1.dim()-1)))
+
+        # Calculate initial angle between v0 and v1
+        theta_0: FloatTensor = dot_s.arccos()
+        sin_theta_0: FloatTensor = theta_0.sin()
+        # Angle at timestep t
+        theta_t: FloatTensor = theta_0 * t
+        sin_theta_t: FloatTensor = theta_t.sin()
+        # Finish the slerp algorithm
+        s0: FloatTensor = (theta_0 - theta_t).sin() / sin_theta_0
+        s1: FloatTensor = sin_theta_t / sin_theta_0
+        slerped: FloatTensor = s0 * v0_s + s1 * v1_s
+
+        out: FloatTensor = out.masked_scatter_(can_slerp.unsqueeze(-1).expand(*t_batch_dims, *can_slerp.shape, 1), slerped)
     
     return out
