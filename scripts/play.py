@@ -7,12 +7,14 @@ from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
+from helpers.sample_interpolation.interp_strategy import InterpStrategy, InterpProto
+from helpers.sample_interpolation.slerp import slerp
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
 print(reassuring_message) # avoid "unused" import :P
 print(reassuring_message_2)
 
 import torch
-from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange
+from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
@@ -32,9 +34,9 @@ from helpers.model_db import get_model_needs, ModelNeeds
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
-from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt
+from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt, BasicPrompt, InterPrompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
-from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
+from helpers.inference_spec.execution_plan import CondInterp, ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
 from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
@@ -42,7 +44,7 @@ from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
 from itertools import chain, repeat, cycle
 
-from typing import List, Generator, Iterable, Optional
+from typing import List, Generator, Iterable, Optional, Callable
 from PIL import Image
 import time
 
@@ -221,68 +223,82 @@ batch_latent_maker = BatchLatentMaker(
 
 max_batch_size = 8
 n_rand_seeds = 0
-seeds: Iterable[int] = chain(
-  repeat(2178792736),
-  (get_seed() for _ in range(n_rand_seeds))
-)
+# seeds: Iterable[int] = chain(
+#   repeat(2178792736),
+#   (get_seed() for _ in range(n_rand_seeds))
+# )
 
-uncond_prompt = Prompt(text='lowres, bad anatomy, bad hands, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
+uncond_prompt = BasicPrompt(text='lowres, bad anatomy, bad hands, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
+# uncond_prompt = BasicPrompt(text='')
 
-cond_keyframes: List[SingleCondition|MultiCond] = [
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # flandre scarlet = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-  ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # kirisame marisa = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, kirisame marisa touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-  ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # hakurei reimu = 5 tokens
-    prompt=Prompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-  ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # konpaku youmu = 5 tokens
-    prompt=Prompt(text='beautiful, 1girl, konpaku youmu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-  ),
-  SingleCondition(
-    cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-    # flandre scarlet = 3 tokens
-    # touhou = 2 tokens
-    prompt=Prompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-  ),
-  # MultiCond(
-  #   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-  #   weighted_cond_prompts=[WeightedPrompt(
-  #     prompt=Prompt(text='man'),
-  #     weight=0.5,
-  #   ), WeightedPrompt(
-  #     prompt=Prompt(text='bear'),
-  #     weight=0.5,
-  #   ), WeightedPrompt(
-  #     prompt=Prompt(text='pig'),
-  #     weight=0.5,
-  #   )]
-  # )
-]
+# cond_keyframes: List[SingleCondition|MultiCond] = [
+#   SingleCondition(
+#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+#     # flandre scarlet = 3 tokens
+#     # touhou = 2 tokens
+#     prompt=BasicPrompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+#   ),
+#   SingleCondition(
+#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+#     # kirisame marisa = 3 tokens
+#     # touhou = 2 tokens
+#     prompt=BasicPrompt(text='beautiful, 1girl, kirisame marisa touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+#   ),
+#   SingleCondition(
+#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+#     # hakurei reimu = 5 tokens
+#     prompt=BasicPrompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+#   ),
+#   SingleCondition(
+#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+#     # konpaku youmu = 5 tokens
+#     prompt=BasicPrompt(text='beautiful, 1girl, konpaku youmu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+#   ),
+#   SingleCondition(
+#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+#     # flandre scarlet = 3 tokens
+#     # touhou = 2 tokens
+#     prompt=BasicPrompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
+#   ),
+#   # MultiCond(
+#   #   cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
+#   #   weighted_cond_prompts=[WeightedPrompt(
+#   #     prompt=BasicPrompt(text='man'),
+#   #     weight=0.5,
+#   #   ), WeightedPrompt(
+#   #     prompt=BasicPrompt(text='bear'),
+#   #     weight=0.5,
+#   #   ), WeightedPrompt(
+#   #     prompt=BasicPrompt(text='pig'),
+#   #     weight=0.5,
+#   #   )]
+#   # )
+# ]
 
-conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
-  keyframes=cond_keyframes,
-  make_inbetween=make_inbetween,
-  steps=8,
-)
+# conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
+#   keyframes=cond_keyframes,
+#   make_inbetween=make_inbetween,
+#   steps=8,
+# )
 
 # prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
 # conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
-#   cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-#   prompt=Prompt(text=prompt),
+#   cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
+#   prompt=BasicPrompt(text=prompt),
 # ))
+
+seeds: Iterable[int] = repeat(0)
+
+conditions: Iterable[ConditionSpec] = (SingleCondition(
+  cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+  prompt=InterPrompt(
+    start=BasicPrompt(text=', flandre scarlet, reddizen, 1girl, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, orange background, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, white headwear, white shirt, yellow ascot'),
+    end=BasicPrompt(text='remilia scarlet, reddizen, 1girl, ascot, silver hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, purple background, puffy short sleeves, puffy sleeves, red bow, red eyes, pink vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, pink headwear, pink shirt, red ascot'),
+    strategy=InterpStrategy.Slerp,
+    quotient=quotient.item()
+  ),
+) for quotient in linspace(start=0, end=1, steps=max_batch_size))
+
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
   cond_spec=cond,
@@ -314,13 +330,21 @@ with no_grad():
     latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
     del specs
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
-    embedding, mask = embedding_and_mask
+    embedding_norm, mask_norm = embedding_and_mask
     del embedding_and_mask
+
+    if '' in plan.prompt_texts_ordered:
+      null_prompt_ix: int = plan.prompt_texts_ordered.index('')
+      # SD was trained loads on unmasked empty-string uncond, so undo uc mask on any empty-string uncond
+      unmasked_clip_segment: BoolTensor = arange(mask_norm.size(1), device=device) < 77
+      mask_norm[null_prompt_ix] = unmasked_clip_segment
+      del unmasked_clip_segment
 
     embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
     # denormalize
-    embedding: FloatTensor = embedding.index_select(0, tensor(embed_instance_ixs_flat, device=device))
-    mask: BoolTensor = mask.index_select(0, tensor(embed_instance_ixs_flat, device=device))
+    embedding_denorm: FloatTensor = embedding_norm.index_select(0, tensor(embed_instance_ixs_flat, device=device))
+    mask_denorm: BoolTensor = mask_norm.index_select(0, tensor(embed_instance_ixs_flat, device=device))
+    del mask_norm
 
     # per sample: quantity of conditions upon which it should be denoised
     conds_per_prompt: List[int] = [len(sample_ixs) for sample_ixs in plan.prompt_text_instance_ixs]
@@ -334,34 +358,46 @@ with no_grad():
         values=torch.zeros([1], dtype=torch.long, device=device),
       ).cumsum(0)
       uncond_ixs: LongTensor = first_cond_ix_per_prompt + tensor(plan.cfg.uncond_instance_ixs, dtype=torch.long, device=device)
-      # SD was trained loads on unmasked empty-string uncond, so undo uc mask on any empty-string uncond
-      empty_string_uncond_ixs: LongTensor = uncond_ixs.masked_select(tensor(plan.cfg.has_empty_string_uncond, dtype=torch.bool, device=device))
-      unmasked_clip_segment: BoolTensor = arange(mask.size(1), device=device) < 77
-      mask: BoolTensor = mask.index_put(
-        indices=[empty_string_uncond_ixs],
-        values=unmasked_clip_segment,
-      )
-      del empty_string_uncond_ixs, unmasked_clip_segment
       cfg_scales: FloatTensor = tensor(plan.cfg.scales, dtype=sampling_dtype, device=device)
+    
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
-    del plan
+
+    cond_interps_flat: List[Optional[CondInterp]] = [cond_interp for cond_interps in plan.cond_interps for cond_interp in cond_interps]
+    for cond_ix, (prompt_text_instance_ix, cond_interp) in enumerate(zip(embed_instance_ixs_flat, cond_interps_flat)):
+      if cond_interp is None: continue
+      match cond_interp.interp_strategy:
+        case InterpStrategy.Slerp:
+          interp: InterpProto = slerp
+        case InterpStrategy.Lerp:
+          interp: InterpProto = lerp
+        case _:
+          raise Exception(f"Never heard of a '{cond_interp.interp_strategy}' InterpStrategy")
+      start: FloatTensor = embedding_denorm[cond_ix]
+      end: FloatTensor = embedding_norm[cond_interp.prompt_text_instance_ix]
+      embedding_denorm[cond_ix] = interp(
+        start,
+        end,
+        cond_interp.interp_quotient,
+      )
+      del start, end
+    del embedding_norm, plan
     
     match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
       # https://github.com/facebookresearch/xformers/issues/576
       # chunked attention *can* be made to support masks, but I didn't implement it yet
       case AttentionMode.Xformers | AttentionMode.Chunked:
-        mask = None
+        mask_denorm = None
 
     denoiser: Denoiser = denoiser_factory(
-      cross_attention_conds=embedding,
-      cross_attention_mask=mask,
+      cross_attention_conds=embedding_denorm,
+      cross_attention_mask=mask_denorm,
       conds_per_prompt=conds_per_prompt_tensor,
       cond_weights=cond_weights,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
     )
-    del embedding, mask, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales
+    del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales
 
     noise_sampler = BrownianTreeNoiseSampler(
       latents,

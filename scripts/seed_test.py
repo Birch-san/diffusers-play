@@ -1,7 +1,7 @@
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
-from helpers.inference_spec.cond_spec import SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt
+from helpers.inference_spec.cond_spec import SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt, BasicPrompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
 from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
@@ -19,18 +19,18 @@ from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
-  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-  prompt=Prompt(text='hello'),
+  cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
+  prompt=BasicPrompt(text='hello'),
 ), MultiCond(
-  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+  cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
   weighted_cond_prompts=[WeightedPrompt(
-    prompt=Prompt(text='man'),
+    prompt=BasicPrompt(text='man'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt=Prompt(text='bear'),
+    prompt=BasicPrompt(text='bear'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt=Prompt(text='pig'),
+    prompt=BasicPrompt(text='pig'),
     weight=0.5,
   )]
 )]
@@ -43,10 +43,11 @@ cond_linspace: List[SingleCondition|MultiCond] = intersperse_linspace(
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
+dtype = torch.float16
 
-start=tensor([0,0], dtype=torch.float16, device=device)
-end=tensor([1,1], dtype=torch.float16, device=device)
-time=tensor([0.5], dtype=torch.float16, device=device)
+start: FloatTensor = tensor([1,0], dtype=dtype, device=device)
+end: FloatTensor = tensor([0,1], dtype=dtype, device=device)
+time: FloatTensor = tensor([[0.25], [0.5]], dtype=torch.float16, device=device)
 s = slerp(start, end, time)
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
