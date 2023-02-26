@@ -1,7 +1,7 @@
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec
 from helpers.inference_spec.latents_shape import LatentsShape
-from helpers.inference_spec.cond_spec import SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt
+from helpers.inference_spec.cond_spec import SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt, BasicPrompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
 from helpers.inference_spec.execution_plan import ExecutionPlan, make_execution_plan
 from helpers.inference_spec.batch_latent_maker import BatchLatentMaker
@@ -9,27 +9,28 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
+from helpers.sample_interpolation.slerp import slerp
 from helpers.get_seed import get_seed
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.embed_text_types import Prompts, EmbeddingAndMask
 import torch
-from torch import FloatTensor, BoolTensor
+from torch import FloatTensor, BoolTensor, tensor, linspace
 from typing import Iterable, Generator, List, Optional
 from itertools import chain, repeat
 
 cond_keyframes: List[SingleCondition|MultiCond] = [SingleCondition(
-  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
-  prompt=Prompt(text='hello'),
+  cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
+  prompt=BasicPrompt(text='hello'),
 ), MultiCond(
-  cfg=CFG(scale=7.5, uncond_prompt=Prompt(text='')),
+  cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
   weighted_cond_prompts=[WeightedPrompt(
-    prompt=Prompt(text='man'),
+    prompt=BasicPrompt(text='man'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt=Prompt(text='bear'),
+    prompt=BasicPrompt(text='bear'),
     weight=0.5,
   ), WeightedPrompt(
-    prompt=Prompt(text='pig'),
+    prompt=BasicPrompt(text='pig'),
     weight=0.5,
   )]
 )]
@@ -42,6 +43,12 @@ cond_linspace: List[SingleCondition|MultiCond] = intersperse_linspace(
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
+dtype = torch.float16
+
+start: FloatTensor = tensor([1,0], dtype=dtype, device=device)
+end: FloatTensor = tensor([0,1], dtype=dtype, device=device)
+time: FloatTensor = tensor([[0.25], [0.5]], dtype=torch.float16, device=device)
+s = slerp(start, end, time)
 
 def embed(prompts: Prompts) -> EmbeddingAndMask:
   batch_size=len(prompts)
@@ -106,6 +113,28 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
+  # s = slerp(embedding[1], embedding[2], 0.5)
+  frank: FloatTensor = torch.stack([
+    torch.stack([
+      embedding[0][0],
+      embedding[1][1],
+    ]),
+    torch.stack([
+      embedding[1][0],
+      embedding[2][0],
+    ]),
+  ], dim=0)
+  frank2: FloatTensor = torch.stack([
+    torch.cat([
+      embedding[2,:,:2],
+      embedding[3,:,2:],
+    ],dim=-1),
+    torch.cat([
+      embedding[0,:,:2],
+      embedding[1,:,2:],
+    ],dim=-1),
+  ], dim=0)
+  s = slerp(frank, frank2, linspace(start=0., end=1., steps=4, device=embedding.device, dtype=embedding.dtype).unflatten(0, (-1, *[1]* embedding.dim())))
 
   embed_instance_ixs_flat: List[int] = [ix for sample_ixs in plan.prompt_text_instance_ixs for ix in sample_ixs]
 

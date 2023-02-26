@@ -2,11 +2,31 @@ from abc import ABC
 from dataclasses import dataclass, field
 from typing import List, Protocol, Optional
 
+from ..sample_interpolation.interp_strategy import InterpStrategy
+
+class PromptProto(Protocol):
+  text: str = ''
+
+@dataclass
+class Prompt(ABC, PromptProto): pass
 
 # intention is to eventually support boosting tokens
 @dataclass
-class Prompt:
+class BasicPrompt(ABC, PromptProto):
   text: str = ''
+
+@dataclass
+class InterPrompt(Prompt):
+  start: BasicPrompt
+  end: BasicPrompt
+  quotient: float
+  strategy: InterpStrategy
+  @property
+  def text(self) -> str:
+    return self.start.text
+
+Prompt.register(BasicPrompt)
+Prompt.register(InterPrompt)
 
 @dataclass
 class CFG:
@@ -18,7 +38,7 @@ class CFG:
   # "negative multi-prompting"? now that's a step too far
   # maybe you can get a similar (identical?) effect by creating a
   # ConditionProto#weighted_cond_prompts element with a negative weight
-  uncond_prompt: Prompt = field(default_factory=Prompt)
+  uncond_prompt: Prompt = field(default_factory=BasicPrompt)
 
 @dataclass
 class WeightedPrompt:
