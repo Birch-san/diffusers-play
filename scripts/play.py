@@ -375,10 +375,10 @@ with no_grad():
       start: FloatTensor = embedding_denorm[cond_ix]
       end: FloatTensor = embedding_norm[cond_interp.prompt_text_instance_ix]
       embedding_denorm[cond_ix] = interp(
-        start,
-        end,
+        start.float(),
+        end.float(),
         cond_interp.interp_quotient,
-      )
+      ).to(embedding_denorm.dtype)
       del start, end
     del embedding_norm, plan
     
