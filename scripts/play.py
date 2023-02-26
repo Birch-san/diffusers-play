@@ -42,7 +42,8 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
-from itertools import chain, repeat, cycle
+from itertools import chain, repeat, cycle, pairwise
+from easing_functions import CubicEaseInOut
 
 from typing import List, Generator, Iterable, Optional, Callable
 from PIL import Image
@@ -222,82 +223,56 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 max_batch_size = 8
-n_rand_seeds = 0
-# seeds: Iterable[int] = chain(
-#   repeat(2178792736),
-#   (get_seed() for _ in range(n_rand_seeds))
-# )
+n_rand_seeds = max_batch_size*2
+seeds: Iterable[int] = chain(
+  repeat(23826275),
+  # (get_seed() for _ in range(n_rand_seeds)),
+  # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
+)
 
-uncond_prompt = BasicPrompt(text='lowres, bad anatomy, bad hands, blurry, mutation, deformed face, ugly, bad proportions, monster, real life, realistic, instagram, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic')
-# uncond_prompt = BasicPrompt(text='')
+cond_prompt0 = 'beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, outdoors, good posture'
+cond_prompts: List[str] = [
+  cond_prompt0,
+  'beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, outdoors, good posture, watercolor (medium), traditional media, ponytail',
+  'beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, indoors, good posture, ponytail, looking at viewer, hair bow',
+  'beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, indoors, good posture, watercolor (medium), traditional media, ponytail',
+  cond_prompt0,
+]
+uncond_prompt0 = 'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic'
+uncond_prompts: List[str] = [
+  uncond_prompt0,
+  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram, arm up',
+  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, arm up, shaved head, weird hair',
+  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram, arm up',
+  uncond_prompt0,
+]
 
-# cond_keyframes: List[SingleCondition|MultiCond] = [
-#   SingleCondition(
-#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-#     # flandre scarlet = 3 tokens
-#     # touhou = 2 tokens
-#     prompt=BasicPrompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-#   ),
-#   SingleCondition(
-#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-#     # kirisame marisa = 3 tokens
-#     # touhou = 2 tokens
-#     prompt=BasicPrompt(text='beautiful, 1girl, kirisame marisa touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-#   ),
-#   SingleCondition(
-#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-#     # hakurei reimu = 5 tokens
-#     prompt=BasicPrompt(text='beautiful, 1girl, hakurei reimu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-#   ),
-#   SingleCondition(
-#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-#     # konpaku youmu = 5 tokens
-#     prompt=BasicPrompt(text='beautiful, 1girl, konpaku youmu, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-#   ),
-#   SingleCondition(
-#     cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-#     # flandre scarlet = 3 tokens
-#     # touhou = 2 tokens
-#     prompt=BasicPrompt(text='beautiful, 1girl, flandre scarlet touhou, detailed hair, portrait, floating hair, waifu, anime, best aesthetic, best quality, ribbon, outdoors, good posture, marker (medium), colored pencil (medium), reddizen'),
-#   ),
-#   # MultiCond(
-#   #   cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
-#   #   weighted_cond_prompts=[WeightedPrompt(
-#   #     prompt=BasicPrompt(text='man'),
-#   #     weight=0.5,
-#   #   ), WeightedPrompt(
-#   #     prompt=BasicPrompt(text='bear'),
-#   #     weight=0.5,
-#   #   ), WeightedPrompt(
-#   #     prompt=BasicPrompt(text='pig'),
-#   #     weight=0.5,
-#   #   )]
-#   # )
-# ]
-
-# conditions: List[SingleCondition|MultiCond] = intersperse_linspace(
-#   keyframes=cond_keyframes,
-#   make_inbetween=make_inbetween,
-#   steps=8,
-# )
-
-# prompt='artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media'
-# conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
-#   cfg=CFG(scale=7.5, uncond_prompt=BasicPrompt(text='')),
-#   prompt=BasicPrompt(text=prompt),
-# ))
-
-seeds: Iterable[int] = repeat(0)
-
-conditions: Iterable[ConditionSpec] = (SingleCondition(
-  cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
-  prompt=InterPrompt(
-    start=BasicPrompt(text=', flandre scarlet, reddizen, 1girl, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, orange background, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, white headwear, white shirt, yellow ascot'),
-    end=BasicPrompt(text='remilia scarlet, reddizen, 1girl, ascot, silver hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, purple background, puffy short sleeves, puffy sleeves, red bow, red eyes, pink vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, pink headwear, pink shirt, red ascot'),
-    strategy=InterpStrategy.Slerp,
-    quotient=quotient.item()
-  ),
-) for quotient in linspace(start=0, end=1, steps=max_batch_size))
+cfg_scale=7.5
+pos_cond_quant=1
+conditions: Iterable[ConditionSpec] = (MultiCond(
+  cfg=None,
+  weighted_cond_prompts=[
+    WeightedPrompt(
+      prompt=InterPrompt(
+        start=BasicPrompt(text=start[0]),
+        end=BasicPrompt(text=end[0]),
+        strategy=InterpStrategy.Slerp,
+        quotient=quotient.item(),
+      ),
+      weight=cfg_scale/pos_cond_quant,
+    ),
+    WeightedPrompt(
+      prompt=InterPrompt(
+        start=BasicPrompt(text=start[1]),
+        end=BasicPrompt(text=end[1]),
+        strategy=InterpStrategy.Slerp,
+        quotient=quotient.item(),
+      ),
+      weight=1-cfg_scale,
+    )
+  ]
+) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
+# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in linspace(start=0, end=1, steps=3)[:-1])
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),

@@ -25,8 +25,8 @@ cd src/diffusers
 # strictly speaking it may be sufficient to just build rather than install, since we're gonna PYTHONPATH diffusers anyway
 python setup.py install
 cd ../..
-# and everything else we missed (dunno what I did wrong)
-pip install transformers safetensors
+# and everything else we missed
+pip install transformers safetensors easing-functions
 ```
 
 Treat yourself to ipython:
