@@ -344,7 +344,6 @@ with no_grad():
     # denormalize
     embedding_denorm: FloatTensor = embedding_norm.index_select(0, tensor(embed_instance_ixs_flat, device=device))
     mask_denorm: BoolTensor = mask_norm.index_select(0, tensor(embed_instance_ixs_flat, device=device))
-    del mask_norm
 
     # per sample: quantity of conditions upon which it should be denoised
     conds_per_prompt: List[int] = [len(sample_ixs) for sample_ixs in plan.prompt_text_instance_ixs]
@@ -379,8 +378,9 @@ with no_grad():
         end.float(),
         cond_interp.interp_quotient,
       ).to(embedding_denorm.dtype)
+      mask_denorm[cond_ix] |= mask_norm[cond_interp.prompt_text_instance_ix]
       del start, end
-    del embedding_norm, plan
+    del embedding_norm, plan, mask_norm
     
     match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
