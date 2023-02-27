@@ -248,31 +248,28 @@ uncond_prompts: List[str] = [
 ]
 
 cfg_scale=7.5
-pos_cond_quant=1
 conditions: Iterable[ConditionSpec] = (MultiCond(
   cfg=None,
   weighted_cond_prompts=[
     WeightedPrompt(
-      prompt=InterPrompt(
-        start=BasicPrompt(text=start[0]),
-        end=BasicPrompt(text=end[0]),
-        strategy=InterpStrategy.Slerp,
-        quotient=quotient.item(),
-      ),
-      weight=cfg_scale/pos_cond_quant,
+      prompt=BasicPrompt(text=start[0]),
+      weight=cfg_scale*quotient.item(),
     ),
     WeightedPrompt(
-      prompt=InterPrompt(
-        start=BasicPrompt(text=start[1]),
-        end=BasicPrompt(text=end[1]),
-        strategy=InterpStrategy.Slerp,
-        quotient=quotient.item(),
-      ),
-      weight=1-cfg_scale,
+      prompt=BasicPrompt(text=end[0]),
+      weight=cfg_scale*(1-quotient.item()),
+    ),
+    WeightedPrompt(
+      prompt=BasicPrompt(text=start[1]),
+      weight=(1-cfg_scale)*quotient.item(),
+    ),
+    WeightedPrompt(
+      prompt=BasicPrompt(text=end[1]),
+      weight=(1-cfg_scale)*(1-quotient.item()),
     )
   ]
 ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
-# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in linspace(start=0, end=1, steps=3)[:-1])
+# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in linspace(start=0, end=1, steps=30)[:-1])
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
