@@ -252,20 +252,22 @@ conditions: Iterable[ConditionSpec] = (MultiCond(
   cfg=None,
   weighted_cond_prompts=[
     WeightedPrompt(
-      prompt=BasicPrompt(text=start[0]),
-      weight=cfg_scale*quotient.item(),
+      prompt=InterPrompt(
+        start=BasicPrompt(text=start[0]),
+        end=BasicPrompt(text=end[0]),
+        strategy=InterpStrategy.Slerp,
+        quotient=quotient.item(),
+      ),
+      weight=cfg_scale,
     ),
     WeightedPrompt(
-      prompt=BasicPrompt(text=end[0]),
-      weight=cfg_scale*(1-quotient.item()),
-    ),
-    WeightedPrompt(
-      prompt=BasicPrompt(text=start[1]),
-      weight=(1-cfg_scale)*quotient.item(),
-    ),
-    WeightedPrompt(
-      prompt=BasicPrompt(text=end[1]),
-      weight=(1-cfg_scale)*(1-quotient.item()),
+      prompt=InterPrompt(
+        start=BasicPrompt(text=start[1]),
+        end=BasicPrompt(text=end[1]),
+        strategy=InterpStrategy.Slerp,
+        quotient=quotient.item(),
+      ),
+      weight=1-cfg_scale,
     )
   ]
 ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
