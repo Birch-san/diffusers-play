@@ -7,19 +7,20 @@ from typing import Dict
 upcast_attention_models = { 'stabilityai/stable-diffusion-2-1' }
 laion_embed_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base' }
 _768_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1' }
-vparam_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'waifu-diffusion/wd-1-5-beta' }
-penultimate_clip_hidden_state_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base', 'hakurei/waifu-diffusion', 'waifu-diffusion/wd-1-5-beta' }
+vparam_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'waifu-diffusion/wd-1-5-beta', 'waifu-diffusion/wd-1-5-beta2' }
+penultimate_clip_hidden_state_models = { 'stabilityai/stable-diffusion-2', 'stabilityai/stable-diffusion-2-1', 'stabilityai/stable-diffusion-2-base', 'stabilityai/stable-diffusion-2-1-base', 'hakurei/waifu-diffusion', 'waifu-diffusion/wd-1-5-beta', 'waifu-diffusion/wd-1-5-beta2' }
 
 xattn_max_context_segments: Dict[str, int] = {
   # you can try using more than this, but it was only trained on up to 3
   'hakurei/waifu-diffusion': 3,
   # not actually known how many context segments they used
-  'waifu-diffusion/wd-1-5-beta': 3
+  'waifu-diffusion/wd-1-5-beta': 3,
+  'waifu-diffusion/wd-1-5-beta2': 3
 }
 
 def get_clip_ckpt(model_name: str) -> ClipCheckpoint|str:
   match model_name:
-    case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta':
+    case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
       return model_name
   if model_name in laion_embed_models:
     return ClipCheckpoint.LAION

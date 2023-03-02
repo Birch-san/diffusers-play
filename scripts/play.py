@@ -69,7 +69,8 @@ device = torch.device(device_type)
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
   # 'hakurei/waifu-diffusion'
-  'waifu-diffusion/wd-1-5-beta'
+  # 'waifu-diffusion/wd-1-5-beta'
+  'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -88,11 +89,13 @@ else:
 upcast_attention = model_needs.needs_upcast_attention
 
 match model_name:
-  # WD 1.4 and 1.5 haven't uploaded fp16 revision yet
+  # WD1.4fp32 = { model_name: 'hakurei/waifu-diffusion', revision=None }
+  # WD1.3fp16 = { model_name: 'hakurei/waifu-diffusion', revision='fp16' }
   case 'hakurei/waifu-diffusion':
     if not wd_prefer_1_3:
       revision = None
-  case 'waifu-diffusion/wd-1-5-beta':
+  # WD 1.5beta only has fp16 revisions for CompVis
+  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
     revision = None
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   model_name,
@@ -195,7 +198,7 @@ match(model_name):
       # WD1.4 was trained on area=640**2 and no side longer than 768
       height = 768
       width = 640**2//height
-  case 'waifu-diffusion/wd-1-5-beta':
+  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
     # WD1.5 was trained on area=896**2 and no side longer than 1152
     sqrt_area=896
     # >1 = portrait
