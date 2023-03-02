@@ -60,7 +60,8 @@ def get_embedder(
     token_lengths: LongTensor = tokens.length.to(device)
     bos_t = torch.full((1,), tokenizer.bos_token_id, device=device)
     eos_t = torch.full_like(bos_t, tokenizer.eos_token_id)
-    segments_needed = token_lengths.to('cpu' if token_lengths.device.type == 'mps' else token_lengths.device).max().item()//max_len_excl_special+1
+    # subtract 1 to convert lengths into the index occupied by that length.
+    segments_needed = (token_lengths-1).clamp(min=0).to('cpu' if token_lengths.device.type == 'mps' else token_lengths.device).max().item()//max_len_excl_special+1
     text_input_ids = text_input_ids.narrow(1, 0, max_len_excl_special*segments_needed)
     attention_mask: BoolTensor = F.pad(
       tokens.attention_mask.to(dtype=torch.bool, device=device).narrow(1, 0, max_len_excl_special*segments_needed),
