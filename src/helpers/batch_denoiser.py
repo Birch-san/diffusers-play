@@ -111,13 +111,12 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     dimensions = target.shape[-2:]
     target_means: FloatTensor = target.mean(dim=(-2,-1))
     target_centered: FloatTensor = target.flatten(-2)-target_means.unsqueeze(-1)
-    # target_max: FloatTensor = target_centered.flatten(-2).abs().max(dim=-1).values
+    del target_means
     target_max: FloatTensor = target_centered.abs().max(dim=-1).values
+    del target_centered
 
     actual_means: FloatTensor = actual.mean(dim=(-2,-1))
     actual_centered: FloatTensor = actual.flatten(-2)-actual_means.unsqueeze(-1)
-    # actual_normalized: FloatTensor = actual_centered/actual_max.unsqueeze(-1)
-    # actual_denormalized: FloatTensor = actual_normalized*target_max.unsqueeze(-1)
 
     if self.dynthresh_percentile is None:
       actual_peak: FloatTensor = actual_centered.abs().max(dim=-1).values
@@ -125,22 +124,21 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     else:
       actual_q: FloatTensor = torch.quantile(actual_centered.abs(), self.dynthresh_percentile, dim=-1)
       actual_peak: FloatTensor = torch.maximum(actual_q, target_max)
+      del actual_q
       actual_peak_broadcast: FloatTensor = actual_peak.unsqueeze(-1)
       actual_clamped: FloatTensor = actual_centered.clamp(
         min=-actual_peak_broadcast,
         max=actual_peak_broadcast,
       )
+      del actual_peak_broadcast
+    del actual_centered
     ratio: FloatTensor = target_max/actual_peak
+    del target_max, actual_peak
 
-    # ratio: FloatTensor = target_max/actual_max
-    # ratio: FloatTensor = target_max/actual_q
-    # del target_means, actual_means
-    # rescaled: FloatTensor = actual_centered * ratio.unsqueeze(-1)
     rescaled: FloatTensor = actual_clamped * ratio.unsqueeze(-1)
-    # del scale
-    # decentered: FloatTensor = rescaled + actual_means.unsqueeze(-1)
+    del actual_clamped, ratio
     decentered: FloatTensor = rescaled + actual_means.unsqueeze(-1)
-    # decentered: FloatTensor = actual_denormalized + actual_means.unsqueeze(-1)
+    del rescaled, actual_means
     unflattened: FloatTensor = decentered.unflatten(-1, dimensions)
 
     return unflattened
