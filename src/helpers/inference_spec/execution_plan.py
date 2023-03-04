@@ -11,6 +11,9 @@ class CfgState:
   # per sample: within that sample's prompt_text_instance_ixs element, the ix at which its uncond can be found
   uncond_instance_ixs: List[int]
   scales: List[float]
+  mimic_scales: List[Optional[float]]
+  # torch.quantile only accepts a 1D tensor of quantiles, so we can't easily vary quantile per-sample
+  dynthresh_percentile: Optional[float]
 
 @dataclass
 class CondInterp:
@@ -35,7 +38,17 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
   start_sigma: Optional[float] = spec.latent_spec.start_sigma if isinstance(spec.latent_spec, Img2ImgSpec) else None
 
   # FeedbackSpec has dependency on previous sample, so must only ever be first in a batch
-  can_merge = acc is not None and (spec.cond_spec.cfg is None) == (acc.cfg is None) and start_sigma == acc.start_sigma and not(isinstance(spec.latent_spec, FeedbackSpec))
+  can_merge = acc is not None and (
+    (spec.cond_spec.cfg is None) == (acc.cfg is None)
+  ) and (
+    start_sigma == acc.start_sigma
+  ) and (
+    not(isinstance(spec.latent_spec, FeedbackSpec))
+  ) and (
+    spec.cond_spec.cfg is None or (
+      spec.cond_spec.cfg.dynthresh_percentile == acc.cfg.dynthresh_percentile
+    )
+  )
 
   if can_merge:
     prompt_text_to_ix: Dict[str, int] = acc._prompt_text_to_ix
@@ -51,7 +64,9 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     cond_weights: List[float] = []
     cfg: Optional[CfgState] = None if spec.cond_spec.cfg is None else CfgState(
       uncond_instance_ixs = [],
-      scales = []
+      scales = [],
+      mimic_scales = [],
+      dynthresh_percentile = spec.cond_spec.cfg.dynthresh_percentile,
     )
     cond_interps: List[List[Optional[CondInterp]]] = []
   
@@ -66,6 +81,7 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
   sample_cond_interps: List[Optional[CondInterp]] = []
   if cfg is not None:
     cfg.scales.append(spec.cond_spec.cfg.scale)
+    cfg.mimic_scales.append(spec.cond_spec.cfg.mimic_scale)
     cfg.uncond_instance_ixs.append(len(sample_prompt_text_instance_ixs))
     prompt_text: str = spec.cond_spec.cfg.uncond_prompt.text
     prompt_ix: int = register_prompt_text(prompt_text)

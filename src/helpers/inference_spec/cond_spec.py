@@ -39,6 +39,9 @@ class CFG:
   # maybe you can get a similar (identical?) effect by creating a
   # ConditionProto#weighted_cond_prompts element with a negative weight
   uncond_prompt: Prompt = field(default_factory=BasicPrompt)
+  # mimic the dynamic range of a different (i.e. lower) CFG scale
+  mimic_scale: Optional[float] = None
+  dynthresh_percentile: Optional[float] = None
 
 @dataclass
 class WeightedPrompt:

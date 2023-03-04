@@ -64,11 +64,14 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
 @dataclass
 class BatchCFGDenoiser(AbstractBatchDenoiser):
   uncond_ixs: LongTensor
-  cfg_scales: FloatTensor
+  cfg_scales: FloatTensor = field(repr=False)
+  mimic_scales: Optional[FloatTensor] = field(repr=False)
+  dynthresh_percentile: Optional[float]
   cond_ixs: LongTensor = field(init=False)
   conds_ex_uncond_per_prompt: LongTensor = field(init=False)
   cond_ex_uncond_count: LongTensor = field(init=False)
   cfg_scaled_cond_weights: FloatTensor = field(init=False)
+  mimic_scaled_cond_weights: Optional[FloatTensor] = field(init=False)
 
   def __post_init__(self):
     super().__post_init__()
@@ -78,7 +81,69 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     self.conds_ex_uncond_per_prompt = self.conds_per_prompt-1
     self.cond_ex_uncond_count = self.cond_count-self.conds_per_prompt.size(0)
     self.cfg_scaled_cond_weights = (self.cond_weights * self.cfg_scales.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0)).reshape(-1, 1, 1, 1)
+    del self.cfg_scales
+    if self.mimic_scales is not None:
+      self.mimic_scaled_cond_weights = (self.cond_weights * self.mimic_scales.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0)).reshape(-1, 1, 1, 1)
+      del self.mimic_scales
+    else:
+      self.mimic_scaled_cond_weights = None
+    del self.cond_weights
     self.cond_summation_ixs = torch.arange(self.batch_size, device=self.conds_per_prompt.device).repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0).reshape(-1, 1, 1, 1)
+  
+  def _compute_for_scale(
+    self,
+    unconds: FloatTensor,
+    diffs: FloatTensor,
+    scaled_cond_weights: FloatTensor,
+  ) -> FloatTensor:
+    """
+    Mutates `unconds`
+    """
+    scaled_diffs: FloatTensor = diffs * scaled_cond_weights
+    cfg_denoised: FloatTensor = unconds.scatter_add_(0, self.cond_summation_ixs.expand(scaled_diffs.shape), scaled_diffs)
+    return cfg_denoised
+
+  def _mimic_scale(
+    self,
+    target: FloatTensor,
+    actual: FloatTensor,
+  ) -> FloatTensor:
+    dimensions = target.shape[-2:]
+    target_means: FloatTensor = target.mean(dim=(-2,-1))
+    target_centered: FloatTensor = target.flatten(-2)-target_means.unsqueeze(-1)
+    # target_max: FloatTensor = target_centered.flatten(-2).abs().max(dim=-1).values
+    target_max: FloatTensor = target_centered.abs().max(dim=-1).values
+
+    actual_means: FloatTensor = actual.mean(dim=(-2,-1))
+    actual_centered: FloatTensor = actual.flatten(-2)-actual_means.unsqueeze(-1)
+    # actual_normalized: FloatTensor = actual_centered/actual_max.unsqueeze(-1)
+    # actual_denormalized: FloatTensor = actual_normalized*target_max.unsqueeze(-1)
+
+    if self.dynthresh_percentile is None:
+      actual_peak: FloatTensor = actual_centered.abs().max(dim=-1).values
+      actual_clamped: FloatTensor = actual_centered
+    else:
+      actual_q: FloatTensor = torch.quantile(actual_centered.abs(), self.dynthresh_percentile, dim=-1)
+      actual_peak: FloatTensor = torch.maximum(actual_q, target_max)
+      actual_peak_broadcast: FloatTensor = actual_peak.unsqueeze(-1)
+      actual_clamped: FloatTensor = actual_centered.clamp(
+        min=-actual_peak_broadcast,
+        max=actual_peak_broadcast,
+      )
+    ratio: FloatTensor = target_max/actual_peak
+
+    # ratio: FloatTensor = target_max/actual_max
+    # ratio: FloatTensor = target_max/actual_q
+    # del target_means, actual_means
+    # rescaled: FloatTensor = actual_centered * ratio.unsqueeze(-1)
+    rescaled: FloatTensor = actual_clamped * ratio.unsqueeze(-1)
+    # del scale
+    # decentered: FloatTensor = rescaled + actual_means.unsqueeze(-1)
+    decentered: FloatTensor = rescaled + actual_means.unsqueeze(-1)
+    # decentered: FloatTensor = actual_denormalized + actual_means.unsqueeze(-1)
+    unflattened: FloatTensor = decentered.unflatten(-1, dimensions)
+
+    return unflattened
 
   def __call__(
     self,
@@ -102,10 +167,14 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     unconds_r: FloatTensor = unconds.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0, output_size=self.cond_ex_uncond_count)
     diffs: FloatTensor = conds-unconds_r
     del conds, unconds_r
-    scaled_diffs: FloatTensor = diffs * self.cfg_scaled_cond_weights
-    del diffs
-    cfg_denoised: FloatTensor = unconds.scatter_add_(0, self.cond_summation_ixs.expand(scaled_diffs.shape), scaled_diffs)
-    return cfg_denoised
+    unconds_backup: Optional[FloatTensor] = None if self.mimic_scaled_cond_weights is None else unconds.detach().clone()
+    cfg_denoised: FloatTensor = self._compute_for_scale(unconds, diffs, self.cfg_scaled_cond_weights)
+    if self.mimic_scaled_cond_weights is None:
+      return cfg_denoised
+    target: FloatTensor = self._compute_for_scale(unconds_backup, diffs, self.mimic_scaled_cond_weights)
+    return self._mimic_scale(target=target, actual=cfg_denoised)
+
+
 
 
 @dataclass
@@ -119,6 +188,8 @@ class BatchDenoiserFactory():
     cond_weights: FloatTensor,
     uncond_ixs: Optional[LongTensor],
     cfg_scales: Optional[FloatTensor],
+    mimic_scales: Optional[FloatTensor],
+    dynthresh_percentile: Optional[float],
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -137,4 +208,6 @@ class BatchDenoiserFactory():
       cond_weights=cond_weights,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
+      mimic_scales=mimic_scales,
+      dynthresh_percentile=dynthresh_percentile,
     )

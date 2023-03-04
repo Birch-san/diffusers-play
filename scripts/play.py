@@ -62,8 +62,8 @@ half = True
 # latest main points at 1.4
 # latest fp16 points at 1.3
 # when True: we make use of this mismatch, to deliberately select 1.3 by picking fp16 revision
-# wd_prefer_1_3 = True
-wd_prefer_1_3 = False
+wd_prefer_1_3 = True
+# wd_prefer_1_3 = False
 
 revision=None
 torch_dtype=None
@@ -76,9 +76,9 @@ device = torch.device(device_type)
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
   # 'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
-  'waifu-diffusion/wd-1-5-beta2'
+  # 'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -241,35 +241,40 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-max_batch_size = 8
-n_rand_seeds = max_batch_size
+seeds_nominal: List[int] = [3524181318]
+# cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
+cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
+
+# max_batch_size = 8
+max_batch_size = 10
+# n_rand_seeds = max_batch_size
 # n_rand_seeds = 1
+n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+
 seeds: Iterable[int] = chain(
   # (2678555696,),
-  (get_seed() for _ in range(n_rand_seeds)),
+  # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
+  (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
 )
 
-# uncond_prompt=BasicPrompt(text='')
-uncond_prompt=BasicPrompt(
-  text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
-)
+uncond_prompt=BasicPrompt(text='')
+# uncond_prompt=BasicPrompt(
+#   text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
+# )
 
-cfg_scale=7.5
-conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
-  cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
+conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
   prompt=BasicPrompt(
-    # text='Eurasian lightning storm badger, greg rutkowski, best quality, epic, masterpiece, sylvain sarrailh, global illumination, full resolution, 4k, hdr, fantasy, intricate, detailed, painting'
-    # text='flandre scarlet, reddizen, 1girl, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, purple background, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, white headwear, white shirt, yellow ascot'
-    text='flandre scarlet, carnelian, 1girl, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, purple background, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, watercolor (medium), traditional media, anime, smile, solo, full body, vest, white headwear, white shirt, yellow ascot, black footwear, shoes, kneehighs, white socks, red skirt, aurora, outdoors, best quality, best aesthetic, waifu, small breasts'
-  )
-))
-# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
-# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in linspace(start=0, end=1, steps=3)[:-1])
+    text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+  ),
+) for cfg_scale in cfg_scales_))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
-  # latent_spec=SeedSpec(seed),
-  latent_spec=ImgEncodeSpec(seed=seed, start_sigma=16., get_latents=lambda: encode_img(img_tensor, generator=torch.Generator(device=vae.device).manual_seed(seed))),
+  latent_spec=SeedSpec(seed),
+  # latent_spec=ImgEncodeSpec(seed=seed, start_sigma=16., get_latents=lambda: encode_img(img_tensor, generator=torch.Generator(device=vae.device).manual_seed(seed))),
   cond_spec=cond,
 ) for seed, cond in zip(seeds, conditions))
 
@@ -296,6 +301,7 @@ with no_grad():
     batch_count += 1
     batch_sample_count = len(specs)
     seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
+    cfgs: List[Optional[float]] = list(map(lambda spec: None if spec.cond_spec.cfg is None else spec.cond_spec.cfg.scale, specs))
     if plan.start_sigma is not None:
       sigmas = sigmas[sigmas<plan.start_sigma]
       print(f"sigmas (truncated):\n{', '.join(['%.4f' % s.item() for s in sigmas])}")
@@ -323,6 +329,9 @@ with no_grad():
     if plan.cfg is None:
       uncond_ixs = None
       cfg_scales = None
+      mimic_scales = None
+      mimic_scales_arr = [None]*batch_sample_count
+      dynthresh_percentile = None
     else:
       first_cond_ix_per_prompt: LongTensor = conds_per_prompt_tensor.roll(1).index_put(
         indices=[torch.zeros([1], dtype=torch.long, device=device)],
@@ -330,6 +339,14 @@ with no_grad():
       ).cumsum(0)
       uncond_ixs: LongTensor = first_cond_ix_per_prompt + tensor(plan.cfg.uncond_instance_ixs, dtype=torch.long, device=device)
       cfg_scales: FloatTensor = tensor(plan.cfg.scales, dtype=sampling_dtype, device=device)
+      if any(map(lambda scale: scale is not None, plan.cfg.mimic_scales)):
+        mimic_scales_arr: List[Optional[float]] = plan.cfg.mimic_scales
+        mimic_scales_defaulted: List[float] = [nominal if mimic is None else mimic for mimic, nominal in zip(plan.cfg.mimic_scales, plan.cfg.scales)]
+        mimic_scales: FloatTensor = tensor(mimic_scales_defaulted, dtype=sampling_dtype, device=device)
+      else:
+        mimic_scales = None
+        mimic_scales_arr = [None]*batch_sample_count
+      dynthresh_percentile: Optional[float] = plan.cfg.dynthresh_percentile
     
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
 
@@ -368,8 +385,10 @@ with no_grad():
       cond_weights=cond_weights,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
+      mimic_scales=mimic_scales,
+      dynthresh_percentile=dynthresh_percentile,
     )
-    del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales
+    del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales
 
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
@@ -408,8 +427,12 @@ with no_grad():
       consistent_batch_size = consistent_batch_size if batch_sample_count == consistent_batch_size else None
 
     base_count = len(os.listdir(sample_path))
-    for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
-      image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
+    # for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
+    #   image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
+    for ix, (seed, cfg, mimic, image) in enumerate(zip(seeds, cfgs, mimic_scales_arr, pil_images)):
+      mim: str = '' if mimic is None else f'.m{mimic}'
+      dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
+      image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}.png"))
     del pil_images
     if device.type == 'cuda':
       torch.cuda.empty_cache()
