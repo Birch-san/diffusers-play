@@ -98,9 +98,13 @@ upcast_attention = model_needs.needs_upcast_attention
 
 match model_name:
   # WD1.4fp32 = { model_name: 'hakurei/waifu-diffusion', revision=None }
+  # WD1.4fp16 = no (official) distribution
+  # WD1.3fp32 = { model_name: 'hakurei/waifu-diffusion', revision='a20c448ad20e797115c379fa2418c5ad64a4cd5c' }
   # WD1.3fp16 = { model_name: 'hakurei/waifu-diffusion', revision='fp16' }
   case 'hakurei/waifu-diffusion':
-    if not wd_prefer_1_3:
+    if wd_prefer_1_3 and revision is None:
+      revision = 'a20c448ad20e797115c379fa2418c5ad64a4cd5c'
+    else:
       revision = None
   # WD 1.5beta only has fp16 revisions for CompVis
   case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
