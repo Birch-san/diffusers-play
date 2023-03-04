@@ -11,8 +11,8 @@ class SeedSpec(LatentSpec):
   seed: int
 
 @dataclass
-class Img2ImgSpec(LatentSpec, ABC):
-  from_sigma: float
+class Img2ImgSpec(SeedSpec, ABC):
+  start_sigma: float
 
 @dataclass
 class FeedbackSpec(Img2ImgSpec): pass
@@ -22,7 +22,7 @@ class GetLatents(Protocol):
   def __call__() -> FloatTensor: ...
 
 @dataclass
-class ImgEncodeSpec(LatentSpec):
+class ImgEncodeSpec(Img2ImgSpec):
   get_latents: GetLatents
 
 LatentSpec.register(SeedSpec)

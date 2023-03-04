@@ -32,7 +32,7 @@ class ExecutionPlan:
   cond_interps: List[List[Optional[CondInterp]]]
 
 def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanMergeResultGeneric[ExecutionPlan]:
-  start_sigma: Optional[float] = spec.latent_spec.from_sigma if isinstance(spec.latent_spec, Img2ImgSpec) else None
+  start_sigma: Optional[float] = spec.latent_spec.start_sigma if isinstance(spec.latent_spec, Img2ImgSpec) else None
 
   # FeedbackSpec has dependency on previous sample, so must only ever be first in a batch
   can_merge = acc is not None and (spec.cond_spec.cfg is None) == (acc.cfg is None) and start_sigma == acc.start_sigma and not(isinstance(spec.latent_spec, FeedbackSpec))

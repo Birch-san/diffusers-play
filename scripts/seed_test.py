@@ -110,7 +110,7 @@ for batch_ix, (plan, specs) in enumerate(batch_generator):
   plan: ExecutionPlan = plan
   specs: List[SampleSpec] = specs
   seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
-  latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
+  latents: FloatTensor = batch_latent_maker.make_latents(specs=map(lambda spec: spec.latent_spec, specs), start_sigma=14.6146)
   embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
   embedding, mask = embedding_and_mask
   # s = slerp(embedding[1], embedding[2], 0.5)

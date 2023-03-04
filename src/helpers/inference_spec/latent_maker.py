@@ -4,7 +4,7 @@ from typing import Iterable, Optional, Protocol, Iterable
 
 class MakeLatentsStrategy(Protocol):
   @staticmethod
-  def __call__(spec: LatentSpec) -> Optional[FloatTensor]: ...
+  def __call__(spec: LatentSpec, start_sigma: float) -> Optional[FloatTensor]: ...
 
 class LatentMaker:
   strategies: Iterable[MakeLatentsStrategy]
@@ -17,9 +17,10 @@ class LatentMaker:
   def make_latents(
     self,
     spec: LatentSpec,
+    start_sigma: float,
   ) -> FloatTensor:
     for strategy in self.strategies:
-      latents: Optional[FloatTensor] = strategy(spec)
+      latents: Optional[FloatTensor] = strategy(spec, start_sigma)
       if latents is not None:
         return latents
     else:

@@ -4,6 +4,7 @@ from torch import LongTensor, BoolTensor, FloatTensor
 import torch
 from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
+from .post_init import PostInitMixin
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -12,13 +13,6 @@ class Denoiser(Protocol):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor: ...
-
-# https://stackoverflow.com/a/59987363
-class PostInitMixin(object):
-  def __post_init__(self):
-    # just intercept the __post_init__ calls so they
-    # aren't relayed to `object`
-    pass
 
 @dataclass
 class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
