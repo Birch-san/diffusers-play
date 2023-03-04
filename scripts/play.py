@@ -253,7 +253,8 @@ batch_latent_maker = BatchLatentMaker(
 seeds_nominal: List[int] = [3640330883]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
-cfg_scales_: Iterable[float] = (7.5, 20.,) #20.,)
+cfg_scales_: Iterable[float] = (10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 20.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
 
 # max_batch_size = 8
@@ -263,7 +264,12 @@ max_batch_size = 10
 n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 seeds: Iterable[int] = chain(
-  repeat(4097250441, len(cfg_scales_)),
+  # repeat(4097250441, len(cfg_scales_)),
+  # repeat(4097250441, len(cfg_scales_)),
+  # repeat(245331461, len(cfg_scales_)),
+  # repeat(1527468831, len(cfg_scales_)),
+  # repeat(4097250441, len(cfg_scales_)),
+  repeat(679566949, len(cfg_scales_)),
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
@@ -278,7 +284,14 @@ uncond_prompt=BasicPrompt(text='')
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=15.),#, dynthresh_percentile=0.995),
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9973),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9973),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.999), # good!
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9995), # bad
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.99875), # bad
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9985), # bad
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9995), # bad
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
   prompt=BasicPrompt(
     # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
