@@ -81,13 +81,13 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     self.conds_ex_uncond_per_prompt = self.conds_per_prompt-1
     self.cond_ex_uncond_count = self.cond_count-self.conds_per_prompt.size(0)
     self.cfg_scaled_cond_weights = (self.cond_weights * self.cfg_scales.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0)).reshape(-1, 1, 1, 1)
-    del self.cfg_scales
     if self.mimic_scales is not None:
-      self.mimic_scaled_cond_weights = (self.cond_weights * self.mimic_scales.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0)).reshape(-1, 1, 1, 1)
+      # we use .minimum() because range mimicking is intended to give you *smaller* values, to prevent deep-frying
+      self.mimic_scaled_cond_weights = (self.cond_weights * torch.minimum(self.cfg_scales, self.mimic_scales).repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0)).reshape(-1, 1, 1, 1)
       del self.mimic_scales
     else:
       self.mimic_scaled_cond_weights = None
-    del self.cond_weights
+    del self.cond_weights, self.cfg_scales
     self.cond_summation_ixs = torch.arange(self.batch_size, device=self.conds_per_prompt.device).repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0).reshape(-1, 1, 1, 1)
   
   def _compute_for_scale(
