@@ -7,7 +7,9 @@ from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
+from helpers.encode_img import EncodeImg, make_encode_img
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
+from helpers.load_img import load_img
 from helpers.log_intermediates import LogIntermediates, make_log_intermediates
 from helpers.sample_interpolation.interp_strategy import InterpStrategy, InterpProto
 from helpers.sample_interpolation.slerp import slerp
@@ -34,7 +36,7 @@ from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds
 from helpers.inference_spec.sample_spec import SampleSpec
-from helpers.inference_spec.latent_spec import Img2ImgSpec, LatentSpec, SeedSpec, ImgEncodeSpec
+from helpers.inference_spec.latent_spec import SeedSpec, ImgEncodeSpec
 from helpers.inference_spec.latents_shape import LatentsShape
 from helpers.inference_spec.cond_spec import ConditionSpec, SingleCondition, MultiCond, WeightedPrompt, CFG, Prompt, BasicPrompt, InterPrompt
 from helpers.inference_spec.execution_plan_batcher import ExecutionPlanBatcher, BatchSpecGeneric
@@ -149,6 +151,7 @@ vae: AutoencoderKL = AutoencoderKL.from_pretrained(
 ).to(device).eval()
 latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
+encode_img: EncodeImg = make_encode_img(vae)
 
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
@@ -219,41 +222,8 @@ match(model_name):
 latent_scale_factor = 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
-def load_img(path) -> FloatTensor:
-  image: Image.Image = Image.open(path).convert("RGB")
-  w, h = image.size
-  print(f"loaded input image of size ({w}, {h}) from {path}")
-  # w, h = map(lambda x: x - x % 32, (w, h))  # resize to integer multiple of 32
-  # image = image.resize((w, h), resample=Image.LANCZOS)
-  # image = np.array(image).astype(np.float32) / 255.0
-  # image = image[None].transpose(0, 3, 1, 2)
-  # image: FloatTensor = torch.from_numpy(image)
-  # return 2.*image - 1.
-  img_arr: np.ndarray = np.array(image)
-  del image
-  img_tensor: FloatTensor = torch.from_numpy(img_arr).to(dtype=torch.float32)
-  del img_arr
-  img_tensor: FloatTensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
-  img_tensor: FloatTensor = img_tensor / 127.5 - 1.0
-  return img_tensor
-
-def encode_latents(img: FloatTensor, batch_size=1, seed: Optional[int]=None) -> FloatTensor:
-  init_image = einops_repeat(img.to(dtype=vae.dtype, device=vae.device), '1 ... -> b ...', b=batch_size)
-  out: AutoencoderKLOutput = vae.encode(init_image) # move to latent space
-  generator = torch.Generator(device=device)
-  generator.manual_seed(seed)
-  init_latent: FloatTensor = out.latent_dist.sample(generator=generator).to(sampling_dtype)
-  init_latent = init_latent * 0.18215
-  return init_latent
-
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
 img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')
-# img_encoded: FloatTensor = encode_latents(img_tensor)
-
-# def img_strategy(spec: LatentSpec) -> Optional[FloatTensor]:
-#   if not isinstance(spec, ImgEncodeSpec):
-#     return None
-#   return spec.get_latents()
 
 seed_latent_maker = SeedLatentMaker(latents_shape, dtype=torch.float32, device=device)
 img_encode_latent_maker = ImgEncodeLatentMaker(seed_latent_maker)
@@ -272,8 +242,8 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 max_batch_size = 8
-# n_rand_seeds = max_batch_size
-n_rand_seeds = 1
+n_rand_seeds = max_batch_size
+# n_rand_seeds = 1
 seeds: Iterable[int] = chain(
   # (2678555696,),
   (get_seed() for _ in range(n_rand_seeds)),
@@ -299,7 +269,7 @@ conditions: Iterable[ConditionSpec] = repeat(SingleCondition(
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   # latent_spec=SeedSpec(seed),
-  latent_spec=ImgEncodeSpec(seed=seed, start_sigma=7., get_latents=lambda: encode_latents(img_tensor, seed=seed)),
+  latent_spec=ImgEncodeSpec(seed=seed, start_sigma=16., get_latents=lambda: encode_img(img_tensor, generator=torch.Generator(device=vae.device).manual_seed(seed))),
   cond_spec=cond,
 ) for seed, cond in zip(seeds, conditions))
 
@@ -330,18 +300,6 @@ with no_grad():
       sigmas = sigmas[sigmas<plan.start_sigma]
       print(f"sigmas (truncated):\n{', '.join(['%.4f' % s.item() for s in sigmas])}")
     latents: FloatTensor = batch_latent_maker.make_latents(specs=map(lambda spec: spec.latent_spec, specs), start_sigma=sigmas[0])
-    # latents: FloatTensor = latents * sigmas[0]
-    # for ix, spec in enumerate(specs):
-    #   match(spec):
-    #     case ImgEncodeSpec(seed, start_sigma, get_latents):
-    #       latent_bias: FloatTensor = get_latents()
-    #       latents[ix] += latent_bias
-    #       del latent_bias
-    # latent_bias: FloatTensor = torch.cat(
-    #   [encode_latents(img_tensor, batch_size=1, seed=spec.latent_spec.seed) for spec in specs],
-    # dim=0)
-    # latent_bias = latent_bias.narrow(-1, 0, latents.shape[-1])
-    # latents += latent_bias
     del specs
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
     embedding_norm, mask_norm = embedding_and_mask

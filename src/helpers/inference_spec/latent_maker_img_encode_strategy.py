@@ -11,7 +11,7 @@ class ImgEncodeLatentMaker:
   
   def _make_latents(self, nominal: FloatTensor, get_latents: GetLatents) -> FloatTensor:
     latent_bias: FloatTensor = get_latents()
-    return nominal + latent_bias
+    return nominal + latent_bias.to(device=nominal.device, dtype=nominal.dtype)
   
   def make_latents(self, spec: LatentSpec, start_sigma: float) -> Optional[FloatTensor]:
     match spec:
