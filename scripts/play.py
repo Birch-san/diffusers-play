@@ -21,7 +21,7 @@ import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.utils.import_utils import is_xformers_available
-from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
+from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m, sample_heun
 
 from helpers.attention.mode import AttentionMode
 from helpers.attention.multi_head_attention.to_mha import to_mha
@@ -55,7 +55,8 @@ import time
 import numpy as np
 from einops import repeat as einops_repeat
 
-half = True
+# half = True
+half = False
 
 # hakurei/waifu-diffusion
 # can refer to both 1.3 and 1.4, depending on commit
@@ -75,8 +76,9 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
-  # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  'CompVis/stable-diffusion-v1-4'
+  # 'runwayml/stable-diffusion-v1-5'
+  # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
@@ -117,7 +119,8 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.TorchMultiheadAttention
+# attn_mode = AttentionMode.TorchMultiheadAttention
+attn_mode = AttentionMode.Xformers
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Chunked:
@@ -173,7 +176,8 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-schedule_template = KarrasScheduleTemplate.CudaMastering
+# schedule_template = KarrasScheduleTemplate.CudaMastering
+schedule_template = KarrasScheduleTemplate.Searching
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,
@@ -245,9 +249,11 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-seeds_nominal: List[int] = [3524181318]
+# seeds_nominal: List[int] = [3524181318]
+seeds_nominal: List[int] = [3640330883]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
-cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+cfg_scales_: Iterable[float] = (7.5, 20.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
 
 # max_batch_size = 8
@@ -257,10 +263,11 @@ max_batch_size = 10
 n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 seeds: Iterable[int] = chain(
+  repeat(4097250441, len(cfg_scales_)),
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
-  (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
+  # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -269,10 +276,13 @@ uncond_prompt=BasicPrompt(text='')
 # )
 
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=15.),#, dynthresh_percentile=0.995),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9973),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
   prompt=BasicPrompt(
-    text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+    text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave'
   ),
 ) for cfg_scale in cfg_scales_))
 
@@ -407,7 +417,8 @@ with no_grad():
     )
 
     tic = time.perf_counter()
-    latents: Tensor = sample_dpmpp_2m(
+    # latents: Tensor = sample_dpmpp_2m(
+    latents: Tensor = sample_heun(
       denoiser,
       latents,
       sigmas,
