@@ -4,7 +4,7 @@ from typing import Callable, TypedDict, List
 from typing_extensions import TypeAlias
 from torch import Tensor
 from PIL import Image
-from .latents_to_pils import latents_to_pils
+from .latents_to_pils import LatentsToPils
 
 class KSamplerCallbackPayload(TypedDict):
   x: Tensor
@@ -15,11 +15,16 @@ class KSamplerCallbackPayload(TypedDict):
 
 KSamplerCallback: TypeAlias = Callable[[KSamplerCallbackPayload], None]
 
-def log_intermediate(intermediates_path: str, payload: KSamplerCallbackPayload) -> None:
+def log_intermediate(
+  latents_to_pils: LatentsToPils,
+  intermediates_paths: List[str],
+  payload: KSamplerCallbackPayload,
+) -> None:
   sample_pils: List[Image.Image] = latents_to_pils(payload['denoised'])
-  for img in sample_pils:
-    img.save(os.path.join(intermediates_path, f"inter.{payload['i']}.png"))
+  for intermediates_path, img in zip(intermediates_paths, sample_pils):
+    img.save(os.path.join(intermediates_path, f"{payload['i']:02d}_{payload['sigma'].item():.4f}.png"))
 
 LogIntermediates: TypeAlias = Callable[[KSamplerCallbackPayload], None]
-def make_log_intermediates(intermediates_path: str) -> LogIntermediates:
-  return partial(log_intermediate, intermediates_path)
+LogIntermediatesFactory: TypeAlias = Callable[[List[str]], LogIntermediates]
+def make_log_intermediates_factory(latents_to_pils: LatentsToPils) -> LogIntermediatesFactory:
+  return lambda intermediates_paths: partial(log_intermediate, latents_to_pils, intermediates_paths)
