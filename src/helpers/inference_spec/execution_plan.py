@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from torch import FloatTensor, full_like, finfo, cat
 from typing import Optional, Dict, List
 from ..sample_interpolation.interp_strategy import InterpStrategy
 from .cond_spec import InterPrompt
@@ -14,6 +15,7 @@ class CfgState:
   mimic_scales: List[Optional[float]]
   # torch.quantile only accepts a 1D tensor of quantiles, so we can't easily vary quantile per-sample
   dynthresh_percentile: Optional[float]
+  channel_limits: Optional[FloatTensor]
 
 @dataclass
 class CondInterp:
@@ -67,6 +69,7 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
       scales = [],
       mimic_scales = [],
       dynthresh_percentile = spec.cond_spec.cfg.dynthresh_percentile,
+      channel_limits = None,
     )
     cond_interps: List[List[Optional[CondInterp]]] = []
   
@@ -80,6 +83,10 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
   sample_prompt_text_instance_ixs: List[int] = []
   sample_cond_interps: List[Optional[CondInterp]] = []
   if cfg is not None:
+    if spec.cond_spec.cfg.channel_limits is not None:
+      if cfg.channel_limits is None:
+        cfg.channel_limits = full_like(spec.cond_spec.cfg.channel_limits, finfo(spec.cond_spec.cfg.channel_limits.dtype).max).expand(len(cfg.scales), *spec.cond_spec.cfg.channel_limits.shape)
+      cfg.channel_limits = cat([cfg.channel_limits, spec.cond_spec.cfg.channel_limits.unsqueeze(0)], dim=0)
     cfg.scales.append(spec.cond_spec.cfg.scale)
     cfg.mimic_scales.append(spec.cond_spec.cfg.mimic_scale)
     cfg.uncond_instance_ixs.append(len(sample_prompt_text_instance_ixs))

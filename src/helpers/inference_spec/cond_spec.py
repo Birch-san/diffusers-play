@@ -1,6 +1,7 @@
 from abc import ABC
 from dataclasses import dataclass, field
 from typing import List, Protocol, Optional
+from torch import FloatTensor
 
 from ..sample_interpolation.interp_strategy import InterpStrategy
 
@@ -42,6 +43,7 @@ class CFG:
   # mimic the dynamic range of a different (i.e. lower) CFG scale
   mimic_scale: Optional[float] = None
   dynthresh_percentile: Optional[float] = None
+  channel_limits: Optional[FloatTensor] = None
 
 @dataclass
 class WeightedPrompt:

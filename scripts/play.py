@@ -289,9 +289,11 @@ conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=15.),#, dynthresh_percentile=0.995),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=cfg_scale),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, channel_limits=tensor([4.9386, 5.7723, 4.2765, 2.2427], device=device, dtype=sampling_dtype)),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9973),
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.999), # good!
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.999), # good!
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9995), # bad
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.99875), # bad
   # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.9985), # bad
@@ -373,6 +375,7 @@ with no_grad():
       mimic_scales = None
       mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile = None
+      channel_limits = None
     else:
       first_cond_ix_per_prompt: LongTensor = conds_per_prompt_tensor.roll(1).index_put(
         indices=[torch.zeros([1], dtype=torch.long, device=device)],
@@ -388,6 +391,7 @@ with no_grad():
         mimic_scales = None
         mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile: Optional[float] = plan.cfg.dynthresh_percentile
+      channel_limits: Optional[FloatTensor] = plan.cfg.channel_limits
     
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
 
@@ -428,6 +432,7 @@ with no_grad():
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,
       dynthresh_percentile=dynthresh_percentile,
+      channel_limits=channel_limits,
     )
     del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales
 
