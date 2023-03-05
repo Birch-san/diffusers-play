@@ -201,7 +201,7 @@ intermediates_path='intermediates'
 for path_ in [sample_path, intermediates_path]:
   os.makedirs(path_, exist_ok=True)
 make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(latents_to_pils)
-log_intermediates_enabled = True
+log_intermediates_enabled = False
 
 match(model_name):
   case 'hakurei/waifu-diffusion':
