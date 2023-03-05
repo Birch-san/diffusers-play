@@ -54,6 +54,7 @@ from PIL import Image
 import time
 import numpy as np
 from einops import repeat as einops_repeat
+from math import ceil
 
 # half = True
 half = False
@@ -253,9 +254,11 @@ batch_latent_maker = BatchLatentMaker(
 seeds_nominal: List[int] = [3640330883]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
-cfg_scales_: Iterable[float] = (10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 20.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
+
+cfg_scales_: Iterable[float] = [scale for keyframe in range(ceil((30-7.5)/1.2)) for scale in tuple(7.5+(x+keyframe)*1.2 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1]]
 
 # max_batch_size = 8
 max_batch_size = 10
