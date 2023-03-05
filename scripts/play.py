@@ -48,6 +48,7 @@ from easing_functions import CubicEaseInOut
 from typing import List, Generator, Iterable, Optional, Callable
 from PIL import Image
 import time
+from math import ceil
 
 half = True
 
@@ -68,9 +69,9 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
-  'waifu-diffusion/wd-1-5-beta2'
+  # 'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -226,56 +227,56 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 max_batch_size = 8
-n_rand_seeds = max_batch_size*2
+
+distinct_seeds: int = 1
+# cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
+# cfg_scales_: Iterable[float] = [
+#   *tuple(x*1.625+1 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1],
+#   *tuple(x*2.5+2.625 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1],
+#   *tuple(x*2.5+6. for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1],
+#   *(x*22.5+7.5 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30))),
+# ]
+# cfg_scales_: Iterable[float] = [scale for keyframe in range(ceil((30-1)/1.625)) for scale in tuple(1+(x+keyframe)*1.625 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1]]
+cfg_scales_: Iterable[float] = [scale for keyframe in range(ceil((30-1)/1.3)) for scale in tuple(1+(x+keyframe)*1.3 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=20)))[:-1]]
+# [scale for keyframe in range(ceil((30-1)/1.625)) for scale in tuple(1+(x+keyframe)*1.625 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1]]
+n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+# 956380759
 seeds: Iterable[int] = chain(
-  repeat(23826275),
+  # 1588338332
+  # 302997249
+  # 2219171469 # wrong capelet until 7.5
+  # 302997249 # only gets dress colour right by CFG7.5
+  # 3640330883 # only gets dress colour right by CFG20
+  # 2919743204 # only gets dress colour right by CFG15
+  # 3524181318 # waku waku, floating hair, only gets dress 7.5 and ascot by 10 # can't decide whether hands or dress
+  # 956380759 # awesome CFG30, interesting CFG2.5, becomes good watercolor at 15
+  # 3515920338 # hair length requires high CFG
+  # 4091389706 # no background 'til CF 10
+  # 265919031 # is Marisa until CFG 7.5, and mob cap only fixed at CFG25
+  # 1048888542 # dress colour requires 7.5
+  # 4290918329 # nice floating hair
+  # 1591767457 # million dollar smile
+  # 2342271040 # another million dollar smile
+  # repeat(23826275),
   # (get_seed() for _ in range(n_rand_seeds)),
-  # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
+  # (seed for _ in range(distinct_seeds) for seed in repeat(get_seed(), len(cfg_scales_))),
+  (seed for _ in range(distinct_seeds) for seed in repeat(3524181318, len(cfg_scales_))),
 )
 
-cond_prompt0 = 'beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, outdoors, good posture'
-cond_prompts: List[str] = [
-  cond_prompt0,
-  'beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, outdoors, good posture, watercolor (medium), traditional media, ponytail',
-  'beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, indoors, good posture, ponytail, looking at viewer, hair bow',
-  'beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, indoors, good posture, watercolor (medium), traditional media, ponytail',
-  cond_prompt0,
-]
-uncond_prompt0 = 'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic'
-uncond_prompts: List[str] = [
-  uncond_prompt0,
-  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram, arm up',
-  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, arm up, shaved head, weird hair',
-  'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram, arm up',
-  uncond_prompt0,
-]
+uncond_prompt=BasicPrompt(
+  # text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic'
+  text=''
+)
 
-cfg_scale=7.5
-pos_cond_quant=1
-conditions: Iterable[ConditionSpec] = (MultiCond(
-  cfg=None,
-  weighted_cond_prompts=[
-    WeightedPrompt(
-      prompt=InterPrompt(
-        start=BasicPrompt(text=start[0]),
-        end=BasicPrompt(text=end[0]),
-        strategy=InterpStrategy.Slerp,
-        quotient=quotient.item(),
-      ),
-      weight=cfg_scale/pos_cond_quant,
-    ),
-    WeightedPrompt(
-      prompt=InterPrompt(
-        start=BasicPrompt(text=start[1]),
-        end=BasicPrompt(text=end[1]),
-        strategy=InterpStrategy.Slerp,
-        quotient=quotient.item(),
-      ),
-      weight=1-cfg_scale,
-    )
-  ]
-) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
-# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in linspace(start=0, end=1, steps=3)[:-1])
+conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
+  prompt=BasicPrompt(
+    # text='hoshimachi suisei, carnelian, anime, traditional media, watercolor (medium), best quality, best aesthetic, 1girl, belt, beret, blue belt, blue bow, blue choker, blue eyes, blue hair, blue nails, blue neckerchief, blue ribbon, blush, bow, small breasts, buttons, choker, closed mouth, collared dress, cowboy shot, crown, double-breasted, dress, eyelashes, frills, gloves, grey dress, grey headwear, hair between eyes, hair ribbon, hands up, hat, highres, hololive, long hair, long sleeves, looking at viewer, neckerchief, partially fingerless gloves, plaid, plaid dress, pleated dress, ribbon, shadow, short dress, side ponytail, sidelocks, smile, tilted headwear'
+    # text='flandre scarlet, reddizen, 1girl, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, orange background, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, simple background, sketch, smile, solo, upper body, vest, white headwear, white shirt, yellow ascot'
+    text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+  ),
+# ) for start, end in pairwise(zip(cond_prompts, uncond_prompts)) for quotient in map(CubicEaseInOut(), linspace(start=0, end=1, steps=30)[:-1]))
+) for cfg_scale in cfg_scales_))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
@@ -305,6 +306,7 @@ with no_grad():
     batch_count += 1
     batch_sample_count = len(specs)
     seeds: List[Optional[int]] = list(map(lambda spec: spec.latent_spec.seed if isinstance(spec.latent_spec, SeedSpec) else None, specs))
+    cfgs: List[Optional[float]] = list(map(lambda spec: None if spec.cond_spec.cfg is None else spec.cond_spec.cfg.scale, specs))
     latents: FloatTensor = batch_latent_maker.make_latents(map(lambda spec: spec.latent_spec, specs))
     del specs
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
@@ -411,8 +413,8 @@ with no_grad():
       consistent_batch_size = consistent_batch_size if batch_sample_count == consistent_batch_size else None
 
     base_count = len(os.listdir(sample_path))
-    for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
-      image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
+    for ix, (seed, cfg, image) in enumerate(zip(seeds, cfgs, pil_images)):
+      image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.cfg{cfg:05.2f}.png"))
     del pil_images
     if device.type == 'cuda':
       torch.cuda.empty_cache()
