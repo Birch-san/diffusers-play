@@ -14,9 +14,9 @@ def latents_to_bchw(vae: AutoencoderKL, latents: Tensor) -> Tensor:
 
   if vae.device.type == 'mps' and latents.size(0) > 1:
     # batched VAE decode seems to be broken in MPS on recent kulinseth master
-    images: Tensor = cat([vae.decode(sample_latents).sample for sample_latents in latents.split(1)])
+    images: Tensor = cat([vae.decode(sample_latents.to(vae.dtype)).sample for sample_latents in latents.split(1)])
   else:
-    images: Tensor = vae.decode(latents).sample
+    images: Tensor = vae.decode(latents.to(vae.dtype)).sample
 
   images: Tensor = (images / 2 + 0.5).clamp(0, 1)
   return images

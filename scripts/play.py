@@ -1,4 +1,4 @@
-import os
+import os, fnmatch
 from diffusers.models.autoencoder_kl import AutoencoderKLOutput
 
 # monkey-patch _randn to use CPU random before k-diffusion uses it
@@ -10,7 +10,7 @@ from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
 from helpers.encode_img import EncodeImg, make_encode_img
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
 from helpers.load_img import load_img
-from helpers.log_intermediates import LogIntermediates, make_log_intermediates
+from helpers.log_intermediates import LogIntermediates, LogIntermediatesFactory, make_log_intermediates_factory
 from helpers.sample_interpolation.interp_strategy import InterpStrategy, InterpProto
 from helpers.sample_interpolation.slerp import slerp
 from helpers.schedules import KarrasScheduleParams, KarrasScheduleTemplate, get_template_schedule
@@ -200,7 +200,8 @@ sample_path='out'
 intermediates_path='intermediates'
 for path_ in [sample_path, intermediates_path]:
   os.makedirs(path_, exist_ok=True)
-log_intermediates: LogIntermediates = make_log_intermediates(intermediates_path)
+make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(latents_to_pils)
+log_intermediates_enabled = True
 
 match(model_name):
   case 'hakurei/waifu-diffusion':
@@ -287,6 +288,16 @@ batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
   make_execution_plan=make_execution_plan,
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
+
+def get_sample_stem(
+  ix_in_batch: int,
+  seed: Optional[int],
+  cfg: Optional[float],
+  mimic: Optional[float],
+) -> str:
+  mim: str = '' if mimic is None else f'.m{mimic}'
+  dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
+  return f"{base_count+ix_in_batch:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}"
 
 consistent_batch_size=None
 
@@ -405,6 +416,17 @@ with no_grad():
       # I'm just re-using it because it's a convenient arbitrary number
       seed=seeds[0],
     )
+  
+    base_count = len(fnmatch.filter(os.listdir(sample_path), '*.png'))
+    sample_stems: List[str] = [get_sample_stem(ix, seed, cfg, mimic) for ix, (seed, cfg, mimic) in enumerate(zip(seeds, cfgs, mimic_scales_arr))]
+
+    if log_intermediates_enabled:
+      intermediates_paths: List[str] = [f'{intermediates_path}/{stem}' for stem in sample_stems]
+      for intermediates_path in intermediates_paths:
+        os.makedirs(intermediates_path, exist_ok=True)
+      callback: LogIntermediates = make_log_intermediates(intermediates_paths)
+    else:
+      callback = None
 
     tic = time.perf_counter()
     latents: Tensor = sample_dpmpp_2m(
@@ -412,7 +434,7 @@ with no_grad():
       latents,
       sigmas,
       # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
-      # callback=log_intermediates,
+      callback=callback,
     ).to(vae_dtype)
     del denoiser
     if device.type == 'cuda':
@@ -430,13 +452,8 @@ with no_grad():
     else:
       consistent_batch_size = consistent_batch_size if batch_sample_count == consistent_batch_size else None
 
-    base_count = len(os.listdir(sample_path))
-    # for ix, (seed, image) in enumerate(zip(seeds, pil_images)):
-    #   image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.png"))
-    for ix, (seed, cfg, mimic, image) in enumerate(zip(seeds, cfgs, mimic_scales_arr, pil_images)):
-      mim: str = '' if mimic is None else f'.m{mimic}'
-      dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
-      image.save(os.path.join(sample_path, f"{base_count+ix:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}.png"))
+    for stem, image in zip(sample_stems, pil_images):
+      image.save(os.path.join(sample_path, f"{stem}.png"))
     del pil_images
     if device.type == 'cuda':
       torch.cuda.empty_cache()
