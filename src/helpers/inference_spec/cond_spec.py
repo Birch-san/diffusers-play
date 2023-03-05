@@ -42,11 +42,13 @@ class CFG:
   # mimic the dynamic range of a different (i.e. lower) CFG scale
   mimic_scale: Optional[float] = None
   dynthresh_percentile: Optional[float] = None
+  center_denoise_output: bool = False
 
 @dataclass
 class WeightedPrompt:
   prompt: Prompt
   weight: float
+  center_denoise_output: bool = False
 
 class ConditionProto(Protocol):
   weighted_cond_prompts: List[WeightedPrompt]
@@ -63,12 +65,14 @@ class ConditionSpec(ABC, ConditionProto):
 @dataclass
 class SingleCondition(ConditionSpec):
   prompt: Prompt
+  center_denoise_output: bool = False
 
   @property
   def weighted_cond_prompts(self) -> List[WeightedPrompt]:
     return [WeightedPrompt(
       prompt=self.prompt,
       weight=1.,
+      center_denoise_output=self.center_denoise_output,
     )]
 
 

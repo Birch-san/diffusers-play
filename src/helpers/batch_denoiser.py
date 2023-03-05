@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass, field
-from torch import LongTensor, BoolTensor, FloatTensor
+from torch import LongTensor, BoolTensor, FloatTensor, where
 import torch
 from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
@@ -21,6 +21,7 @@ class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
   cross_attention_mask: Optional[BoolTensor]
   conds_per_prompt: LongTensor
   cond_weights: FloatTensor
+  center_denoise_outputs: Optional[BoolTensor]
   cond_count: int = field(init=False)
   batch_size: int = field(init=False)
   
@@ -56,6 +57,12 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
       attention_mask=self.cross_attention_mask,
     )
     del noised_latents_in, sigma_in
+    if self.center_denoise_outputs is not None:
+      denoised_latents = where(
+        self.center_denoise_outputs,
+        denoised_latents-denoised_latents.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(denoised_latents.shape),
+        denoised_latents,
+      )
     scaled_conds: FloatTensor = denoised_latents * self.cond_weights
     del denoised_latents
     summed: FloatTensor = torch.zeros(self.batch_size, *scaled_conds.shape[1:], dtype=scaled_conds.dtype, device=scaled_conds.device).scatter_add_(0, self.cond_summation_ixs.expand(scaled_conds.shape), scaled_conds)
@@ -158,6 +165,12 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       encoder_hidden_states=self.cross_attention_conds,
       attention_mask=self.cross_attention_mask,
     )
+    if self.center_denoise_outputs is not None:
+      denoised_latents = where(
+        self.center_denoise_outputs,
+        denoised_latents-denoised_latents.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(denoised_latents.shape),
+        denoised_latents,
+      )
     del noised_latents_in, sigma_in
     unconds: FloatTensor = denoised_latents.index_select(0, self.uncond_ixs)
     conds: FloatTensor = denoised_latents.index_select(0, self.cond_ixs)
@@ -188,6 +201,7 @@ class BatchDenoiserFactory():
     cfg_scales: Optional[FloatTensor],
     mimic_scales: Optional[FloatTensor],
     dynthresh_percentile: Optional[float],
+    center_denoise_outputs: Optional[BoolTensor],
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -197,6 +211,7 @@ class BatchDenoiserFactory():
         cross_attention_mask=cross_attention_mask,
         conds_per_prompt=conds_per_prompt,
         cond_weights=cond_weights,
+        center_denoise_outputs=center_denoise_outputs,
       )
     return BatchCFGDenoiser(
       denoiser=self.denoiser,
@@ -204,6 +219,7 @@ class BatchDenoiserFactory():
       cross_attention_mask=cross_attention_mask,
       conds_per_prompt=conds_per_prompt,
       cond_weights=cond_weights,
+      center_denoise_outputs=center_denoise_outputs,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,

@@ -33,6 +33,8 @@ class ExecutionPlan:
   cond_weights: List[float]
   cfg: Optional[CfgState]
   cond_interps: List[List[Optional[CondInterp]]]
+  # per uncond/cond
+  center_denoise_outputs: List[bool]
 
 def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanMergeResultGeneric[ExecutionPlan]:
   start_sigma: Optional[float] = spec.latent_spec.start_sigma if isinstance(spec.latent_spec, Img2ImgSpec) else None
@@ -57,6 +59,7 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     cond_weights: List[float] = acc.cond_weights
     cfg: Optional[CfgState] = acc.cfg
     cond_interps: List[List[Optional[CondInterp]]] = acc.cond_interps
+    center_denoise_outputs: List[bool] = acc.center_denoise_outputs
   else:
     prompt_text_to_ix: Dict[str, int] = {}
     prompt_texts_ordered: List[str] = []
@@ -69,6 +72,7 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
       dynthresh_percentile = spec.cond_spec.cfg.dynthresh_percentile,
     )
     cond_interps: List[List[Optional[CondInterp]]] = []
+    center_denoise_outputs: List[bool] = []
   
   def register_prompt_text(prompt_text: str) -> None:
     if prompt_text not in prompt_text_to_ix:
@@ -88,12 +92,14 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     sample_prompt_text_instance_ixs.append(prompt_ix)
     assert not isinstance(spec.cond_spec.cfg.uncond_prompt, InterPrompt), "InterPrompt not implemented for uncond. you can achieve this by describing your CFG as a multi-cond instead https://twitter.com/Birchlabs/status/1627286152087478272"
     sample_cond_interps.append(None)
+    center_denoise_outputs.append(spec.cond_spec.cfg.center_denoise_output)
 
   for weighted_prompt in spec.cond_spec.weighted_cond_prompts:
     prompt_text: str = weighted_prompt.prompt.text
     prompt_ix: int = register_prompt_text(prompt_text)
     sample_prompt_text_instance_ixs.append(prompt_ix)
     cond_weights.append(weighted_prompt.weight)
+    center_denoise_outputs.append(weighted_prompt.center_denoise_output)
     match weighted_prompt.prompt:
       case InterPrompt(start, end, quotient, strategy):
         secondary_prompt_ix: int = register_prompt_text(end.text)
@@ -116,6 +122,7 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     cond_weights=cond_weights,
     cfg=cfg,
     cond_interps=cond_interps,
+    center_denoise_outputs=center_denoise_outputs,
   )
 
   return PlanMergeResultGeneric(

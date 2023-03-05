@@ -49,7 +49,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable
+from typing import List, Generator, Iterable, Optional, Callable, Tuple
 from PIL import Image
 import time
 import numpy as np
@@ -75,8 +75,8 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
-  # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  'CompVis/stable-diffusion-v1-4'
+  # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
@@ -246,10 +246,20 @@ batch_latent_maker = BatchLatentMaker(
   latent_maker.make_latents,
 )
 
-seeds_nominal: List[int] = [3524181318]
+# seeds_nominal: List[int] = [3524181318]
+seeds_nominal: List[int] = [
+  4097250441,
+  245331461,
+  679566949,
+  1527468831,
+  1659224482,
+]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
-cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
+cfg_scales_: Iterable[float] = (7.5,) #20.,)
+
+center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
 
 # max_batch_size = 8
 max_batch_size = 10
@@ -261,7 +271,8 @@ seeds: Iterable[int] = chain(
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
-  (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
+  # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
+  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(center_denoise_outputs_))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -270,12 +281,14 @@ uncond_prompt=BasicPrompt(text='')
 # )
 
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
-  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt),
+  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, center_denoise_output=center_denoise_output),
   prompt=BasicPrompt(
-    text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+    text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
   ),
-) for cfg_scale in cfg_scales_))
+  center_denoise_output=center_denoise_output,
+) for center_denoise_output in center_denoise_outputs_ for cfg_scale in cfg_scales_))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
@@ -294,10 +307,12 @@ def get_sample_stem(
   seed: Optional[int],
   cfg: Optional[float],
   mimic: Optional[float],
+  center_denoise_output: Optional[bool],
 ) -> str:
   mim: str = '' if mimic is None else f'.m{mimic}'
   dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
-  return f"{base_count+ix_in_batch:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}"
+  cen: str = '' if center_denoise_output is None else f'.c{center_denoise_output}'
+  return f"{base_count+ix_in_batch:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}{cen}"
 
 consistent_batch_size=None
 
@@ -321,7 +336,7 @@ with no_grad():
       sigmas = sigmas[sigmas<plan.start_sigma]
       print(f"sigmas (truncated):\n{', '.join(['%.4f' % s.item() for s in sigmas])}")
     latents: FloatTensor = batch_latent_maker.make_latents(specs=map(lambda spec: spec.latent_spec, specs), start_sigma=sigmas[0])
-    del specs
+    
     embedding_and_mask: EmbeddingAndMask = embed(plan.prompt_texts_ordered)
     embedding_norm, mask_norm = embedding_and_mask
     del embedding_and_mask
@@ -365,6 +380,20 @@ with no_grad():
     
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
 
+    if any(plan.center_denoise_outputs):
+      center_denoise_outputs: Optional[BoolTensor] = tensor(plan.center_denoise_outputs, dtype=torch.bool, device=device).reshape(-1, 1, 1, 1) if any(plan.center_denoise_outputs) else None
+      center_configs: List[bool] = [
+        any((
+          cond_prompt.center_denoise_output for cond_prompt in spec.cond_spec.weighted_cond_prompts
+        )) or (
+          False if spec.cond_spec.cfg is None else spec.cond_spec.cfg.center_denoise_output
+        ) for spec in specs
+      ]
+    else:
+      center_denoise_outputs = None
+      center_configs: List[None] = [None]*batch_sample_count
+    del specs
+
     cond_interps_flat: List[Optional[CondInterp]] = [cond_interp for cond_interps in plan.cond_interps for cond_interp in cond_interps]
     for cond_ix, (prompt_text_instance_ix, cond_interp) in enumerate(zip(embed_instance_ixs_flat, cond_interps_flat)):
       if cond_interp is None: continue
@@ -402,8 +431,9 @@ with no_grad():
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,
       dynthresh_percentile=dynthresh_percentile,
+      center_denoise_outputs=center_denoise_outputs,
     )
-    del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales
+    del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales, center_denoise_outputs
 
     noise_sampler = BrownianTreeNoiseSampler(
       latents,
@@ -418,7 +448,7 @@ with no_grad():
     )
   
     base_count = len(fnmatch.filter(os.listdir(sample_path), '*.png'))
-    sample_stems: List[str] = [get_sample_stem(ix, seed, cfg, mimic) for ix, (seed, cfg, mimic) in enumerate(zip(seeds, cfgs, mimic_scales_arr))]
+    sample_stems: List[str] = [get_sample_stem(ix, seed, cfg, mimic, center) for ix, (seed, cfg, mimic, center) in enumerate(zip(seeds, cfgs, mimic_scales_arr, center_configs))]
 
     if log_intermediates_enabled:
       intermediates_paths: List[str] = [f'{intermediates_path}/{stem}' for stem in sample_stems]
