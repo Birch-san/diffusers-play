@@ -56,8 +56,8 @@ import numpy as np
 from einops import repeat as einops_repeat
 from math import ceil
 
-# half = True
-half = False
+half = True
+# half = False
 
 # hakurei/waifu-diffusion
 # can refer to both 1.3 and 1.4, depending on commit
@@ -177,8 +177,8 @@ embed: Embed = get_embedder(
   torch_dtype=torch_dtype
 )
 
-# schedule_template = KarrasScheduleTemplate.CudaMastering
-schedule_template = KarrasScheduleTemplate.Searching
+schedule_template = KarrasScheduleTemplate.CudaMastering
+# schedule_template = KarrasScheduleTemplate.Searching
 schedule: KarrasScheduleParams = get_template_schedule(
   schedule_template,
   model_sigma_min=unet_k_wrapped.sigma_min,
@@ -252,20 +252,62 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 # seeds_nominal: List[int] = [3524181318]
-seeds_nominal: List[int] = [3640330883]
+# seeds_nominal: List[int] = [3640330883]
+seeds_nominal: List[int] = [
+  86322125, # pretty stable
+  340323845,
+  436376137,
+  580263270,
+  715317074, # multimodal
+  830333947,
+  1157730004, # pretty stable # !
+  1289965640, # pretty stable, loses background, blows out without going uggo # !
+  1385218415,
+  1542102181, # multimodal
+  1797628106,
+  1903893103,
+  1935991193,
+  1976864330,
+  1979478207,
+  2106704619, # slightly multimodal
+  2573662367,
+  2637280979,
+  2704538591,
+  2886215181,
+  3013151840, # pretty stable
+  3069611639, # pretty stable
+  3395487508, # pretty stable
+  3426263955,
+  3760630765,
+  # new candidates:
+  4272841740,
+  3505358989,
+  3725857796, # CFG artifacts early and many
+]
+# seeds_nominal: List[int] = [1289965640]
+seeds_nominal: List[int] = [4097250441]
+# seeds_nominal: List[int] = [830333947]
+# seeds_nominal: List[int] = [2106704619]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 20.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 20.) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 15.0, 20.0, 30.0,) #20.,)
+cfg_scales_: Iterable[float] = (7.5, 30.0,) #20.,)
+# cfg_scales_: Iterable[float] = (30.0,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5,) #20.,)
 
-cfg_scales_: Iterable[float] = [scale for keyframe in range(ceil((30-7.5)/1.2)) for scale in tuple(7.5+(x+keyframe)*1.2 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1]]
+# cfg_scales_: Iterable[float] = [scale for keyframe in range(ceil((30-7.5)/1.2)) for scale in tuple(7.5+(x+keyframe)*1.2 for x in map(CubicEaseInOut(), linspace(start=0., end=1., steps=30)))[:-1]]
 
 # max_batch_size = 8
-max_batch_size = 10
+max_batch_size = 16
 # n_rand_seeds = max_batch_size
 # n_rand_seeds = 1
-n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+# n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+# n_rand_seeds = 8
+n_rand_seeds = (max_batch_size//len(cfg_scales_))*8
 
 seeds: Iterable[int] = chain(
   # repeat(4097250441, len(cfg_scales_)),
@@ -273,11 +315,13 @@ seeds: Iterable[int] = chain(
   # repeat(245331461, len(cfg_scales_)),
   # repeat(1527468831, len(cfg_scales_)),
   # repeat(4097250441, len(cfg_scales_)),
-  repeat(679566949, len(cfg_scales_)),
+  # repeat(679566949, len(cfg_scales_)),
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
+  # (seed for seed in map(lambda _: get_seed(), range(n_rand_seeds)) for _ in range(len(cfg_scales_))),
+  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -302,6 +346,8 @@ conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
   prompt=BasicPrompt(
     # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
     text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave'
+    # text='masterpiece character portrait of a blonde girl, full resolution, 4k, akihiko yoshida, ilya kuvshinov, Pixiv featured, baroque scenic, artgerm, sylvain sarrailh, rossdraws, wlop, global illumination, highly intricate, best quality'
+    # text='masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination'
   ),
 ) for cfg_scale in cfg_scales_))
 
