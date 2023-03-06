@@ -232,7 +232,7 @@ latent_scale_factor = 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
-img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')
+# img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')
 
 seed_latent_maker = SeedLatentMaker(latents_shape, dtype=torch.float32, device=device)
 img_encode_latent_maker = ImgEncodeLatentMaker(seed_latent_maker)
