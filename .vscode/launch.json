@@ -114,6 +114,18 @@
         "PYTHONPATH": "/Users/birch/git/pytorch_mps:${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
         "PYTORCH_ENABLE_MPS_FALLBACK": "1",
       }
+    },
+    {
+      "name": "Python: Tokenizer Play",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/tokenizer_play.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
+        "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+      }
     }
   ]
 }
