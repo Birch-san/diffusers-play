@@ -49,7 +49,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable, Tuple
+from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict
 from PIL import Image
 import time
 import numpy as np
@@ -302,6 +302,12 @@ batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
+model_shortname: Dict[str, str] = {
+  'CompVis/stable-diffusion-v1-3': 'sd1.3',
+  'CompVis/stable-diffusion-v1-4': 'sd1.4',
+  'runwayml/stable-diffusion-v1-5': 'sd1.5',
+}
+
 def get_sample_stem(
   ix_in_batch: int,
   seed: Optional[int],
@@ -312,7 +318,10 @@ def get_sample_stem(
   mim: str = '' if mimic is None else f'.m{mimic}'
   dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
   cen: str = '' if center_denoise_output is None else f'.c{center_denoise_output}'
-  return f"{base_count+ix_in_batch:05}.{seed}.cfg{cfg:05.2f}{mim}{dynpct}{cen}"
+  model: str = f'.{model_shortname[model_name]}' if model_name in model_shortname else ''
+  depth: str = '' if half else '.fp32'
+  cfg_str: str = '' if cfg is None else f'.cfg{cfg:05.2f}'
+  return f"{base_count+ix_in_batch:05}.{seed}{cfg_str}{mim}{dynpct}{cen}{model}{depth}"
 
 consistent_batch_size=None
 
