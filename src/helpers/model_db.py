@@ -18,6 +18,12 @@ xattn_max_context_segments: Dict[str, int] = {
   'waifu-diffusion/wd-1-5-beta2': 3
 }
 
+model_shortname: Dict[str, str] = {
+  'CompVis/stable-diffusion-v1-3': 'sd1.3',
+  'CompVis/stable-diffusion-v1-4': 'sd1.4',
+  'runwayml/stable-diffusion-v1-5': 'sd1.5',
+}
+
 def get_clip_ckpt(model_name: str) -> ClipCheckpoint|str:
   match model_name:
     case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':

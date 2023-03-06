@@ -8,6 +8,7 @@ from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
 from helpers.encode_img import EncodeImg, make_encode_img
+from helpers.file_naming import get_sample_stem
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
 from helpers.load_img import load_img
 from helpers.log_intermediates import LogIntermediates, LogIntermediatesFactory, make_log_intermediates_factory
@@ -302,27 +303,6 @@ batcher = ExecutionPlanBatcher[SampleSpec, ExecutionPlan](
 )
 batch_generator: Generator[BatchSpecGeneric[ExecutionPlan], None, None] = batcher.generate(sample_specs)
 
-model_shortname: Dict[str, str] = {
-  'CompVis/stable-diffusion-v1-3': 'sd1.3',
-  'CompVis/stable-diffusion-v1-4': 'sd1.4',
-  'runwayml/stable-diffusion-v1-5': 'sd1.5',
-}
-
-def get_sample_stem(
-  ix_in_batch: int,
-  seed: Optional[int],
-  cfg: Optional[float],
-  mimic: Optional[float],
-  center_denoise_output: Optional[bool],
-) -> str:
-  mim: str = '' if mimic is None else f'.m{mimic}'
-  dynpct: str = '' if dynthresh_percentile is None else f'.p{dynthresh_percentile}'
-  cen: str = '' if center_denoise_output is None else f'.c{center_denoise_output}'
-  model: str = f'.{model_shortname[model_name]}' if model_name in model_shortname else ''
-  depth: str = '' if half else '.fp32'
-  cfg_str: str = '' if cfg is None else f'.cfg{cfg:05.2f}'
-  return f"{base_count+ix_in_batch:05}.{seed}{cfg_str}{mim}{dynpct}{cen}{model}{depth}"
-
 consistent_batch_size=None
 
 sum_of_batch_times=0
@@ -457,7 +437,22 @@ with no_grad():
     )
   
     base_count = len(fnmatch.filter(os.listdir(sample_path), '*.png'))
-    sample_stems: List[str] = [get_sample_stem(ix, seed, cfg, mimic, center) for ix, (seed, cfg, mimic, center) in enumerate(zip(seeds, cfgs, mimic_scales_arr, center_configs))]
+    sample_stems: List[str] = [get_sample_stem(
+      base_count=base_count,
+      ix_in_batch=ix,
+      seed=seed,
+      cfg=cfg,
+      mimic=mimic,
+      dynthresh_percentile=dynthresh_percentile,
+      center_denoise_output=center,
+      half=half,
+      model_name=model_name,
+    ) for ix, (seed, cfg, mimic, center) in enumerate(zip(
+      seeds,
+      cfgs,
+      mimic_scales_arr,
+      center_configs,
+    ))]
 
     if log_intermediates_enabled:
       intermediates_paths: List[str] = [f'{intermediates_path}/{stem}' for stem in sample_stems]
