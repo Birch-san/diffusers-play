@@ -103,9 +103,12 @@ match model_name:
   # WD1.3fp32 = { model_name: 'hakurei/waifu-diffusion', revision='a20c448ad20e797115c379fa2418c5ad64a4cd5c' }
   # WD1.3fp16 = { model_name: 'hakurei/waifu-diffusion', revision='fp16' }
   case 'hakurei/waifu-diffusion':
-    if wd_prefer_1_3 and revision is None:
-      revision = 'a20c448ad20e797115c379fa2418c5ad64a4cd5c'
+    if wd_prefer_1_3:
+      if not half:
+        # prefer final WD1.3 fp32 commit over default branch
+        revision = 'a20c448ad20e797115c379fa2418c5ad64a4cd5c'
     else:
+      # there's no (official WD1.3fp16), so download 32-bit weights either way (we can cast dtype afterward)
       revision = None
   # WD 1.5beta only has fp16 revisions for CompVis
   case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
