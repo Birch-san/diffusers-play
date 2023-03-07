@@ -48,7 +48,7 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
-from itertools import chain, repeat, cycle, pairwise
+from itertools import chain, repeat, cycle, pairwise, accumulate
 from easing_functions import CubicEaseInOut
 
 from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict
@@ -77,8 +77,8 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
-  'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  # 'CompVis/stable-diffusion-v1-4'
+  'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
@@ -271,15 +271,15 @@ center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
 # max_batch_size = 8
 max_batch_size = 10
 # n_rand_seeds = max_batch_size
-# n_rand_seeds = 1
-n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+n_rand_seeds = 10
+# n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 seeds: Iterable[int] = chain(
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
-  # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
+  (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
-  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(center_denoise_outputs_))),
+  # (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(center_denoise_outputs_))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -288,14 +288,13 @@ uncond_prompt=BasicPrompt(text='')
 # )
 
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, center_denoise_output=center_denoise_output),
+  cfg=CFG(scale=7.5, uncond_prompt=uncond_prompt),
   prompt=BasicPrompt(
-    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
-    text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
+    text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
+    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot, anime, best quality, best aesthetic, waifu, full body, kneehighs, white socks, shoes, black footwear, red skirt, bare arms'
+    # text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
   ),
-  center_denoise_output=center_denoise_output,
-) for center_denoise_output in center_denoise_outputs_ for cfg_scale in cfg_scales_))
+),))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
@@ -408,7 +407,19 @@ with no_grad():
       ).to(embedding_denorm.dtype)
       mask_denorm[cond_ix] |= mask_norm[cond_interp.prompt_text_instance_ix]
       del start, end
-    del embedding_norm, plan, mask_norm
+    del embedding_norm
+
+    # BOS and EOS only
+    fun_mask: BoolTensor = (arange(mask_norm.size(1), device=device) == 0) | (arange(mask_norm.size(1), device=device) == 74)
+    sample_cond_denorm_ixs: Iterable[int] = (0, *accumulate((len(cond_norm_ixs) for cond_norm_ixs in plan.prompt_text_instance_ixs[:-1])))
+    # for every odd-numbered sample: retain only BOS and EOS embeds
+    for sample_first_cond_denorm_ix, cond_norm_ixs, uncond_norm_ix in tuple(zip(sample_cond_denorm_ixs, plan.prompt_text_instance_ixs, plan.cfg.uncond_instance_ixs))[1::2]:
+      for cond_norm_ix in cond_norm_ixs:
+        if cond_norm_ix == uncond_norm_ix:
+          continue
+        cond_denorm_ix: int = sample_first_cond_denorm_ix + cond_norm_ix
+        mask_denorm[cond_denorm_ix] = fun_mask
+    del fun_mask, plan
     
     match(attn_mode):
       # xformers attn_bias is only implemented for Triton + A100 GPU
