@@ -21,6 +21,7 @@ print(reassuring_message_2)
 import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
+from diffusers.models.cross_attention import AttnProcessor2_0
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
@@ -121,7 +122,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.TorchMultiheadAttention
+attn_mode = AttentionMode.ScaledDPAttn
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Chunked:
@@ -134,6 +135,8 @@ match(attn_mode):
   case AttentionMode.TorchMultiheadAttention:
     tap_module: TapModule = replace_attn_to_tap_module(to_mha)
     unet.apply(tap_module)
+  case AttentionMode.ScaledDPAttn:
+    unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
@@ -411,7 +414,7 @@ with no_grad():
       # xformers attn_bias is only implemented for Triton + A100 GPU
       # https://github.com/facebookresearch/xformers/issues/576
       # chunked attention *can* be made to support masks, but I didn't implement it yet
-      case AttentionMode.Xformers | AttentionMode.Chunked:
+      case AttentionMode.Xformers | AttentionMode.Chunked | AttentionMode.ScaledDPAttn:
         mask_denorm = None
 
     denoiser: Denoiser = denoiser_factory(
