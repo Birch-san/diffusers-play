@@ -1,4 +1,4 @@
-from torch import nn, Tensor
+from torch import nn, Tensor, FloatTensor
 from typing import Optional
 from ..attn_compatible import CrossAttnCompatible
 
@@ -29,20 +29,22 @@ class MultiheadAttention(nn.MultiheadAttention, CrossAttnCompatible):
         hidden_states: Tensor,
         encoder_hidden_states: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
-        cross_attn_mask: Optional[Tensor] = None,
         **cross_attention_kwargs,
     ) -> Tensor:
         kv = hidden_states if encoder_hidden_states is None else encoder_hidden_states
-        if cross_attn_mask is not None:
-            cross_attn_mask = cross_attn_mask.repeat_interleave(self.num_heads, dim=0)
-            cross_attn_mask = cross_attn_mask.unsqueeze(-2)
+        if encoder_hidden_states is not None and 'encoder_attention_bias' in cross_attention_kwargs:
+            encoder_attention_bias: FloatTensor = cross_attention_kwargs['encoder_attention_bias']
+            encoder_attention_bias = encoder_attention_bias.repeat_interleave(self.num_heads, dim=0)
+            encoder_attention_bias = encoder_attention_bias.unsqueeze(-2)
             _, vision_tokens, _ = hidden_states.shape
-            cross_attn_mask = cross_attn_mask.expand(-1, vision_tokens, -1)
+            encoder_attention_bias = encoder_attention_bias.expand(-1, vision_tokens, -1)
+        else:
+            encoder_attention_bias = None
         out, _ = super().forward(
             query=hidden_states,
             key=kv,
             value=kv,
             need_weights=False,
-            attn_mask=cross_attn_mask,
+            attn_mask=encoder_attention_bias,
         )
         return out

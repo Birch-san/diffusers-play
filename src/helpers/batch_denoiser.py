@@ -19,7 +19,7 @@ class Denoiser(Protocol):
 class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
   denoiser: DiffusersSDDenoiser
   cross_attention_conds: FloatTensor
-  cross_attention_mask: Optional[BoolTensor]
+  cross_attention_bias: Optional[FloatTensor]
   conds_per_prompt: LongTensor
   cond_weights: FloatTensor
   center_denoise_outputs: Optional[BoolTensor]
@@ -55,7 +55,7 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=self.cross_attention_conds,
-      attention_mask=self.cross_attention_mask,
+      cross_attention_bias=self.cross_attention_bias,
     )
     del noised_latents_in, sigma_in
     if self.center_denoise_outputs is not None:
@@ -181,7 +181,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     disable_cfg = False # sigma[0].item()<1.1
     if disable_cfg:
       cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
-      cross_attention_mask = self.cross_attention_mask.index_select(0, self.cond_ixs)
+      cross_attention_bias = self.cross_attention_bias.index_select(0, self.cond_ixs)
       conds_per_prompt = self.conds_per_prompt-1
       cond_count = cross_attention_conds.size(0)
       if self.center_denoise_outputs is not None:
@@ -189,7 +189,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     else:
       center_denoise_outputs = self.center_denoise_outputs
       cross_attention_conds = self.cross_attention_conds
-      cross_attention_mask = self.cross_attention_mask
+      cross_attention_bias = self.cross_attention_bias
       conds_per_prompt = self.conds_per_prompt
       cond_count = self.cond_count
     noised_latents_in: FloatTensor = noised_latents.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
@@ -200,7 +200,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=cross_attention_conds,
-      cross_attention_mask=cross_attention_mask,
+      cross_attention_bias=cross_attention_bias,
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
@@ -235,7 +235,7 @@ class BatchDenoiserFactory():
   def __call__(
     self,
     cross_attention_conds: FloatTensor,
-    cross_attention_mask: Optional[BoolTensor],
+    cross_attention_bias: Optional[FloatTensor],
     conds_per_prompt: LongTensor,
     cond_weights: FloatTensor,
     uncond_ixs: Optional[LongTensor],
@@ -252,7 +252,7 @@ class BatchDenoiserFactory():
       return BatchNoCFGDenoiser(
         denoiser=self.denoiser,
         cross_attention_conds=cross_attention_conds,
-        cross_attention_mask=cross_attention_mask,
+        cross_attention_bias=cross_attention_bias,
         conds_per_prompt=conds_per_prompt,
         cond_weights=cond_weights,
         center_denoise_outputs=center_denoise_outputs,
@@ -260,7 +260,7 @@ class BatchDenoiserFactory():
     return BatchCFGDenoiser(
       denoiser=self.denoiser,
       cross_attention_conds=cross_attention_conds,
-      cross_attention_mask=cross_attention_mask,
+      cross_attention_bias=cross_attention_bias,
       conds_per_prompt=conds_per_prompt,
       cond_weights=cond_weights,
       center_denoise_outputs=center_denoise_outputs,
