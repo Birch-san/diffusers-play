@@ -18,7 +18,7 @@ class Denoiser(Protocol):
 class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
   denoiser: DiffusersSDDenoiser
   cross_attention_conds: FloatTensor
-  cross_attention_mask: Optional[BoolTensor]
+  cross_attention_bias: Optional[FloatTensor]
   conds_per_prompt: LongTensor
   cond_weights: FloatTensor
   center_denoise_outputs: Optional[BoolTensor]
@@ -54,7 +54,7 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=self.cross_attention_conds,
-      attention_mask=self.cross_attention_mask,
+      cross_attention_bias=self.cross_attention_bias,
     )
     del noised_latents_in, sigma_in
     if self.center_denoise_outputs is not None:
@@ -163,7 +163,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=self.cross_attention_conds,
-      attention_mask=self.cross_attention_mask,
+      cross_attention_bias=self.cross_attention_bias,
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
@@ -194,7 +194,7 @@ class BatchDenoiserFactory():
   def __call__(
     self,
     cross_attention_conds: FloatTensor,
-    cross_attention_mask: Optional[BoolTensor],
+    cross_attention_bias: Optional[FloatTensor],
     conds_per_prompt: LongTensor,
     cond_weights: FloatTensor,
     uncond_ixs: Optional[LongTensor],
@@ -208,7 +208,7 @@ class BatchDenoiserFactory():
       return BatchNoCFGDenoiser(
         denoiser=self.denoiser,
         cross_attention_conds=cross_attention_conds,
-        cross_attention_mask=cross_attention_mask,
+        cross_attention_bias=cross_attention_bias,
         conds_per_prompt=conds_per_prompt,
         cond_weights=cond_weights,
         center_denoise_outputs=center_denoise_outputs,
@@ -216,7 +216,7 @@ class BatchDenoiserFactory():
     return BatchCFGDenoiser(
       denoiser=self.denoiser,
       cross_attention_conds=cross_attention_conds,
-      cross_attention_mask=cross_attention_mask,
+      cross_attention_bias=cross_attention_bias,
       conds_per_prompt=conds_per_prompt,
       cond_weights=cond_weights,
       center_denoise_outputs=center_denoise_outputs,

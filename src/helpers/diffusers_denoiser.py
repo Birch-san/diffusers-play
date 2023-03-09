@@ -1,4 +1,4 @@
-from torch import Tensor, FloatTensor, BoolTensor
+from torch import Tensor, FloatTensor
 from diffusers.models import UNet2DConditionModel
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 from k_diffusion.external import DiscreteEpsDDPMDenoiser, DiscreteVDDPMDenoiser
@@ -17,21 +17,21 @@ class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
     sample: FloatTensor,
     timestep: Union[Tensor, float, int],
     encoder_hidden_states: Tensor,
+    cross_attention_bias: Optional[FloatTensor] = None,
     return_dict: bool = True,
-    attention_mask: Optional[BoolTensor] = None,
   ) -> Tensor:
-    # cross_attn_mask is a proposal from my xattn_mask_2 branch of diffusers:
+    # encoder_attention_bias is a proposal from my cross_attn_mask_3 branch of diffusers:
     # https://github.com/huggingface/diffusers/issues/1890
     # don't pass it in if we don't have to, to ensure compatibility with main branch of diffusers
-    attn_kwargs = {} if attention_mask is None else {
-      'cross_attn_mask': attention_mask,
+    cross_attention_kwargs = {} if cross_attention_bias is None else {
+      'encoder_attention_bias': cross_attention_bias,
     }
-    out: UNet2DConditionOutput = self.inner_model(
+    out: UNet2DConditionOutput = self.inner_model.forward(
       sample.to(self.inner_model.dtype),
       timestep.to(self.inner_model.dtype),
       encoder_hidden_states=encoder_hidden_states.to(self.inner_model.dtype),
       return_dict=return_dict,
-      **attn_kwargs,
+      cross_attention_kwargs=cross_attention_kwargs,
     )
     return out.sample.to(self.sampling_dtype)
 
@@ -50,21 +50,21 @@ class DiffusersSD2Denoiser(DiscreteVDDPMDenoiser):
     sample: FloatTensor,
     timestep: Union[Tensor, float, int],
     encoder_hidden_states: Tensor,
+    cross_attention_bias: Optional[FloatTensor] = None,
     return_dict: bool = True,
-    attention_mask: Optional[BoolTensor] = None,
     ) -> Tensor:
-    # cross_attn_mask is a proposal from my xattn_mask_2 branch of diffusers:
+    # encoder_attention_bias is a proposal from my cross_attn_mask_3 branch of diffusers:
     # https://github.com/huggingface/diffusers/issues/1890
     # don't pass it in if we don't have to, to ensure compatibility with main branch of diffusers
-    attn_kwargs = {} if attention_mask is None else {
-      'cross_attn_mask': attention_mask,
+    cross_attention_kwargs = {} if cross_attention_bias is None else {
+      'encoder_attention_bias': cross_attention_bias,
     }
     out: UNet2DConditionOutput = self.inner_model(
       sample.to(self.inner_model.dtype),
       timestep.to(self.inner_model.dtype),
       encoder_hidden_states=encoder_hidden_states.to(self.inner_model.dtype),
       return_dict=return_dict,
-      **attn_kwargs,
+      cross_attention_kwargs=cross_attention_kwargs,
     )
     return out.sample.to(self.sampling_dtype)
 
