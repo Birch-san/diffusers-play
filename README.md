@@ -4,8 +4,9 @@
 
 ```bash
 git submodule update --init --recursive
-conda create -n diffnightly -c pytorch-nightly -c defaults python==3.10.6 pytorch
-conda activate diffnightly
+conda create -n p311 -c pytorch-nightly -c conda-forge -c defaults python==3.11
+conda activate p311
+pip3 install --upgrade --pre torch torchvision --extra-index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
 ### Linux + CUDA
