@@ -7,3 +7,6 @@
 [submodule "lora"]
 	path = src/lora
 	url = https://github.com/Birch-san/lora.git
+[submodule "src/ml-stable-diffusion"]
+	path = src/ml-stable-diffusion
+	url = https://github.com/Birch-san/ml-stable-diffusion.git

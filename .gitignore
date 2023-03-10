@@ -2,7 +2,6 @@
 /intermediates/
 __pycache__/
 .DS_Store
-/src/ml-stable-diffusion/
 /init/
 /pt/
 /text-inversion-model*/
