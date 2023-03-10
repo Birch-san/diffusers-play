@@ -124,7 +124,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.ScaledDPAttn
+attn_mode = AttentionMode.Standard if device.type == 'mps' else AttentionMode.TorchMultiheadAttention
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Chunked:
