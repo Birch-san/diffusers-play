@@ -23,7 +23,7 @@ import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from torch.nn.functional import pad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
-from diffusers.models.cross_attention import AttnProcessor2_0
+from diffusers.models.cross_attention import AttnProcessor2_0, CrossAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
@@ -124,9 +124,11 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.Standard if device.type == 'mps' else AttentionMode.TorchMultiheadAttention
+attn_mode = AttentionMode.Legacy if device.type == 'mps' else AttentionMode.TorchMultiheadAttention
 match(attn_mode):
   case AttentionMode.Standard: pass
+  case AttentionMode.Legacy:
+    unet.set_attn_processor(CrossAttnProcessor())
   case AttentionMode.Chunked:
     set_chunked_attn: TapAttn = make_set_chunked_attn(
       query_chunk_size = 1024,
