@@ -10,3 +10,6 @@
 [submodule "src/ml-stable-diffusion"]
 	path = src/ml-stable-diffusion
 	url = https://github.com/Birch-san/ml-stable-diffusion.git
+[submodule "src/coremltools"]
+	path = src/coremltools
+	url = https://github.com/Birch-san/coremltools.git
