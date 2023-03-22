@@ -53,7 +53,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict
+from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, NamedTuple
 from PIL import Image
 import time
 import numpy as np
@@ -79,10 +79,10 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
-  'CompVis/stable-diffusion-v1-4'
+  # 'CompVis/stable-diffusion-v1-4'
   # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
-  # 'waifu-diffusion/wd-1-5-beta2'
+  'waifu-diffusion/wd-1-5-beta2'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -206,11 +206,12 @@ sigmas_quantized = torch.cat([
 print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
 
 sample_path='out'
-intermediates_path='intermediates'
-for path_ in [sample_path, intermediates_path]:
+latents_path=f'{sample_path}/latents'
+for path_ in [sample_path, latents_path]:
   os.makedirs(path_, exist_ok=True)
 make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(latents_to_pils)
 log_intermediates_enabled = False
+save_latents_enabled = True
 
 match(model_name):
   case 'hakurei/waifu-diffusion':
@@ -256,13 +257,13 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 # seeds_nominal: List[int] = [3524181318]
-seeds_nominal: List[int] = [
-  4097250441,
-  245331461,
-  679566949,
-  1527468831,
-  1659224482,
-]
+# seeds_nominal: List[int] = [
+#   4097250441,
+#   245331461,
+#   679566949,
+#   1527468831,
+#   1659224482,
+# ]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
@@ -273,31 +274,52 @@ center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
 # max_batch_size = 8
 max_batch_size = 10
 # n_rand_seeds = max_batch_size
-# n_rand_seeds = 1
-n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+n_rand_seeds = 10
+# n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+
+class PromptTextPair(NamedTuple):
+  uncond: str
+  cond: str
+
+anime_uncond: str = 'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
+real_uncond: str = 'lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, anime'
+
+# uncond_prompt=BasicPrompt(text='')
+uncond_prompt=BasicPrompt(
+  text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
+)
+
+prompt_text_common: str = 'looking at viewer, hair between eyes, floating hair, touhou project, best quality, best aesthetic'
+prompt_texts: List[PromptTextPair] = [
+  PromptTextPair(uncond=anime_uncond, cond=f'kirisame marisa touhou, carnelian, 1girl, watercolor (medium), traditional media, full body, outdoors, {prompt_text_common} small breasts, black dress, blonde hair, yellow eyes, black footwear, shoes, white socks, light smile, kneehighs, puffy short sleeves, witch hat, white shirt, buttons, apron, white apron, waist apron, long hair, detailed hair, bare arms, hat bow, bangs, single braid, hair bow, white bow, jumping, hands outstretched, palms'),
+  PromptTextPair(uncond=anime_uncond, cond=f'hakurei reimu, carnelian, 1girl, watercolor (medium), traditional media, full body, outdoors, {prompt_text_common}, waifu, small breasts, red dress, black hair, red eyes, brown footwear, shoes, white socks, glaring, bare shoulders, wide sleeves, hair bow, yellow ascot, hair ribbon, red ribbon, hair tubes, long hair, detailed hair, bare arms, midriff peek, detached sleeves, knees together feet apart, own hands together'),
+  PromptTextPair(uncond=anime_uncond, cond=f'konpaku youmu, sazanami mio, 1girl, marker (medium), colored pencil (medium), full body, outdoors, {prompt_text_common}, from side, small breasts, green skirt, silver hair, green eyes, black footwear, shoes, white socks, short sleeves, hair bow, hairband, hair ribbon, neck ribbon, short hair, detailed hair, bare arms, puffy short sleeves, white shirt, vest, bangs, miniskirt, green vest, black bow, black hairband, blunt bangs, blush, parted lips, long legs, sun'),
+  PromptTextPair(uncond=anime_uncond, cond=f'flandre scarlet, reddizen, 1girl, watercolor (medium), painting (medium), full body, outdoors, {prompt_text_common}, small breasts, ascot, blonde hair, blush, bow, closed mouth, collared shirt, hair between eyes, hat, hat bow, looking at viewer, medium hair, mob cap, one side up, puffy short sleeves, puffy sleeves, red bow, red eyes, red vest, shirt, short sleeves, smile, solo, vest, white headwear, white socks, shoes, red footwear, white shirt, yellow ascot, standing, waifu, hands on hips, knees together feet apart, bare legs, crystal'),
+  PromptTextPair(uncond=anime_uncond, cond=f'alice margatroid, sazanami mio, 1girl, full body, outdoors, {prompt_text_common}, medium breasts, ascot, blonde hair, sash, closed mouth, hair between eyes, red hairband, looking at viewer, medium hair, puffy short sleeves, blue eyes, cross-laced footwear, brown footwear, shoes, red ascot, frills, frilled sash, frilled dress, frilled ascot, capelet, white capelet, pantyhose, black pantyhose, bare arms, boots, aurora, light smile'),
+  PromptTextPair(uncond=anime_uncond, cond='artoria pendragon (fate), carnelian, 1girl, general content, full body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media, best quality, best aesthetic'),
+  PromptTextPair(uncond=anime_uncond, cond='matou sakura, carnelian, 1girl, purple hair, full body, looking at viewer, medium breasts, hair between eyes, floating hair, purple eyes, long hair, long sleeves, collared shirt, brown vest, black skirt, white sleeves, school uniform, homurahara academy school uniform, red ribbon, wide hips, bare legs, lying, marker (medium), best quality, best aesthetic, white socks'),
+  PromptTextPair(uncond=anime_uncond, cond='aqua (konosuba), carnelian, general content, one girl, looking at viewer, blue hair, bangs, medium breasts, frills, blue skirt, blue shirt, detached sleeves, long hair, blue eyes, green ribbon, sleeveless shirt, gem, thighhighs under boots, watercolor (medium), traditional media), best quality, best aesthetic'),
+  PromptTextPair(uncond=anime_uncond, cond='beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, outdoors, good posture, watercolor (medium), traditional media, ponytail'),
+  PromptTextPair(uncond=anime_uncond, cond='beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, anime, carnelian, best aesthetic, best quality, ribbon, indoors, good posture, watercolor (medium), traditional media, ponytail'),
+  PromptTextPair(uncond=real_uncond, cond='beautiful, 1girl, a smiling and winking girl, wearing a dark kimono, taking a selfie on a bridge over a river. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, outdoors, good posture'),
+  PromptTextPair(uncond=real_uncond, cond='beautiful, 1girl, a smiling and winking girl, wearing a business suit, taking a selfie at her desk at the office. detailed hair, portrait, floating hair, realistic, real life, best aesthetic, best quality, ribbon, indoors, good posture, ponytail, looking at viewer, hair bow'),
+]
 
 seeds: Iterable[int] = chain(
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
-  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(center_denoise_outputs_))),
+  (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
-uncond_prompt=BasicPrompt(text='')
-# uncond_prompt=BasicPrompt(
-#   text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
-# )
-
+cfg_scale=7.5
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, center_denoise_output=center_denoise_output),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=BasicPrompt(text=uncond)),
   prompt=BasicPrompt(
-    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
-    text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
+    text=cond,
   ),
-  center_denoise_output=center_denoise_output,
-) for center_denoise_output in center_denoise_outputs_ for cfg_scale in cfg_scales_))
+) for uncond, cond in prompt_texts))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
@@ -503,6 +525,11 @@ with no_grad():
     del denoiser
     if device.type == 'cuda':
       torch.cuda.empty_cache()
+    
+    if save_latents_enabled:
+      for stem, sample_latents in zip(sample_stems, latents):
+        torch.save(sample_latents, os.path.join(latents_path, f"{stem}.pt"))
+    
     pil_images: List[Image.Image] = latents_to_pils(latents)
     del latents
 
