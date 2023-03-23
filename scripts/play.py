@@ -8,6 +8,7 @@ from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
+from helpers.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents, make_approx_latents_to_rgb, make_approx_rgb_to_latents
 from helpers.encode_img import EncodeImg, make_encode_img
 from helpers.file_naming import get_sample_stem
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
@@ -69,7 +70,6 @@ half = True
 # latest fp16 points at 1.3
 # when True: we make use of this mismatch, to deliberately select 1.3 by picking fp16 revision
 wd_prefer_1_3 = True
-# wd_prefer_1_3 = False
 
 revision=None
 torch_dtype=None
@@ -81,11 +81,11 @@ device = torch.device(device_type)
 
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
-  'CompVis/stable-diffusion-v1-4'
+  # 'CompVis/stable-diffusion-v1-4'
   # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
-  # 'runwayml/stable-diffusion-v1-5'
+  'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
   # 'stabilityai/stable-diffusion-2-base'
@@ -171,6 +171,8 @@ encode_img: EncodeImg = make_encode_img(vae)
 approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name, wd_prefer_1_3)
 approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
 approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils(approx_decoder)
+dynthresh_decoder: LatentsToRGB = make_approx_latents_to_rgb(approx_decoder)
+dynthresh_encoder: RGBToLatents = make_approx_rgb_to_latents(approx_decoder)
 
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
@@ -267,32 +269,82 @@ batch_latent_maker = BatchLatentMaker(
 )
 
 # seeds_nominal: List[int] = [3524181318]
+# seeds_nominal: List[int] = [
+#   4097250441,
+#   245331461,
+#   679566949,
+#   1527468831,
+#   1659224482,
+# ]
 seeds_nominal: List[int] = [
-  4097250441,
-  245331461,
-  679566949,
-  1527468831,
-  1659224482,
+  86322125, # pretty stable
+  # 340323845,
+  # 436376137,
+  # 580263270,
+  # 715317074, # multimodal
+  # 830333947,
+  # 1157730004, # pretty stable # !
+  # 1289965640, # pretty stable, loses background, blows out without going uggo # !
+  # 1385218415,
+  # 1542102181, # multimodal
+  # 1797628106,
+  # 1903893103,
+  # 1935991193,
+  # 1976864330,
+  # 1979478207,
+  # 2106704619, # slightly multimodal
+  # 2573662367,
+  # 2637280979,
+  # 2704538591,
+  # 2886215181,
+  # 3013151840, # pretty stable
+  # 3069611639, # pretty stable
+  # 3395487508, # pretty stable
+  # 3426263955,
+  # 3760630765,
+  # # new candidates:
+  # 4272841740,
+  # 3505358989,
+  # 3725857796, # CFG artifacts early and many
 ]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
-cfg_scales_: Iterable[float] = (7.5,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 15., 20., 30.,) #20.,)
+cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
 
-center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
+# center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
+dynthresh_percentiles: List[Optional[float]] = [None, 0.995]
+# dynthresh_percentiles: List[Optional[float]] = [None]
 
 # max_batch_size = 8
 max_batch_size = 10
 # n_rand_seeds = max_batch_size
-# n_rand_seeds = 1
-n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+n_rand_seeds = 1
+# n_rand_seeds = (max_batch_size)//len(cfg_scales_)
+
+prompt_texts: List[str] = [
+  'masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
+  'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
+  # 'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
+  # 'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
+  # 'kochiya sanae, carnelian, general content, one girl, solo, upper body, light smile, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, bare shoulders, blue skirt, snake hair ornament, blue eyes, white sleeves, wide hips, hand up, watercolor (medium), traditional media, painting (medium)',
+  # 'patchouli knowledge, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, mob hat, striped, collar, purple dress, striped, wide hips, purple eyes, purple hair, watercolor (medium), traditional media, painting (medium)',
+  # 'flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot',
+  # 'matou sakura, carnelian, 1girl, purple hair, looking at viewer, medium breasts, hair between eyes, floating hair, purple eyes, long hair, long sleeves, collared shirt, brown vest, black skirt, white sleeves, school uniform, red ribbon, wide hips, lying, marker (medium)',
+  # 'konpaku youmu, sazanami mio, from side, white shirt, green skirt, silver hair, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil (medium)',
+  # 'konpaku youmu, sazanami mio, safe, high quality, white shirt, green skirt, silver hair, from side, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil',
+  # 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
+  # 'aqua (konosuba), carnelian, general content, one girl, looking at viewer, blue hair, bangs, medium breasts, frills, blue skirt, blue shirt, detached sleeves, long hair, blue eyes, green ribbon, sleeveless shirt, gem, thighhighs under boots, watercolor (medium), traditional media'
+]
 
 seeds: Iterable[int] = chain(
   # (2678555696,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
-  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(center_denoise_outputs_))),
+  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
+  # (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -301,14 +353,11 @@ uncond_prompt=BasicPrompt(text='')
 # )
 
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  # cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, mimic_scale=7.5, dynthresh_percentile=0.985),
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, center_denoise_output=center_denoise_output),
+  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, dynthresh_percentile=dynthresh_percentile, pixel_space_dynthresh=True),
   prompt=BasicPrompt(
-    # text='flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot'
-    text='masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
+    text=prompt,
   ),
-  center_denoise_output=center_denoise_output,
-) for center_denoise_output in center_denoise_outputs_ for cfg_scale in cfg_scales_))
+) for dynthresh_percentile in dynthresh_percentiles for prompt in prompt_texts for cfg_scale in cfg_scales_))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
@@ -370,6 +419,7 @@ with no_grad():
       mimic_scales = None
       mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile = None
+      pixel_space_dynthresh = True
     else:
       first_cond_ix_per_prompt: LongTensor = conds_per_prompt_tensor.roll(1).index_put(
         indices=[torch.zeros([1], dtype=torch.long, device=device)],
@@ -385,6 +435,7 @@ with no_grad():
         mimic_scales = None
         mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile: Optional[float] = plan.cfg.dynthresh_percentile
+      pixel_space_dynthresh = plan.cfg.pixel_space_dynthresh
     
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
 
@@ -462,6 +513,9 @@ with no_grad():
       mimic_scales=mimic_scales,
       dynthresh_percentile=dynthresh_percentile,
       center_denoise_outputs=center_denoise_outputs,
+      dynthresh_latent_decoder=dynthresh_decoder,
+      dynthresh_latent_encoder=dynthresh_encoder,
+      pixel_space_dynthresh=pixel_space_dynthresh,
     )
     del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales, center_denoise_outputs
 

@@ -5,6 +5,7 @@ import torch
 from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
+from .dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -74,6 +75,9 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   cfg_scales: FloatTensor = field(repr=False)
   mimic_scales: Optional[FloatTensor] = field(repr=False)
   dynthresh_percentile: Optional[float]
+  dynthresh_latent_decoder: Optional[LatentsToRGB]
+  dynthresh_latent_encoder: Optional[RGBToLatents]
+  pixel_space_dynthresh: bool
   cond_ixs: LongTensor = field(init=False)
   conds_ex_uncond_per_prompt: LongTensor = field(init=False)
   cond_ex_uncond_count: LongTensor = field(init=False)
@@ -150,6 +154,13 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
 
     return unflattened
 
+  def _pixel_space_dynthresh(
+    self,
+    denoised_latents: FloatTensor
+  ) -> FloatTensor:
+    # TODO
+    return denoised_latents
+
   def __call__(
     self,
     noised_latents: FloatTensor,
@@ -180,6 +191,8 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     del conds, unconds_r
     unconds_backup: Optional[FloatTensor] = None if self.mimic_scaled_cond_weights is None else unconds.detach().clone()
     cfg_denoised: FloatTensor = self._compute_for_scale(unconds, diffs, self.cfg_scaled_cond_weights)
+    if self.pixel_space_dynthresh and self.dynthresh_percentile is not None:
+      cfg_denoised = self._pixel_space_dynthresh(cfg_denoised)
     if self.mimic_scaled_cond_weights is None:
       return cfg_denoised
     target: FloatTensor = self._compute_for_scale(unconds_backup, diffs, self.mimic_scaled_cond_weights)
@@ -202,6 +215,9 @@ class BatchDenoiserFactory():
     mimic_scales: Optional[FloatTensor],
     dynthresh_percentile: Optional[float],
     center_denoise_outputs: Optional[BoolTensor],
+    dynthresh_latent_decoder: Optional[LatentsToRGB],
+    dynthresh_latent_encoder: Optional[RGBToLatents],
+    pixel_space_dynthresh: bool = True,
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -224,4 +240,7 @@ class BatchDenoiserFactory():
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,
       dynthresh_percentile=dynthresh_percentile,
+      dynthresh_latent_decoder=dynthresh_latent_decoder,
+      dynthresh_latent_encoder=dynthresh_latent_encoder,
+      pixel_space_dynthresh=pixel_space_dynthresh,
     )
