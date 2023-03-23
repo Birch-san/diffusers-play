@@ -29,7 +29,7 @@ weights_dir=path.join(assets_dir, 'weights')
 for path_ in [weights_dir, predictions_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
-weights_path = path.join(weights_dir, "model.pth")
+weights_path = path.join(weights_dir, "model.pt")
 
 class Decoder(Module):
   lin: Linear
@@ -90,7 +90,8 @@ def test():
   test_inputs: Tensor = torch.stack([torch.load(path.join(test_inputs_dir, pt), map_location=device, weights_only=True).flatten(-2).transpose(-2,-1).to(training_dtype) for pt in test_input_paths])
   model.eval() # maybe inference mode does that for us
   predicts: Tensor = model(test_inputs)
-  latent_height: int = 128
+  latent_height: int = 64
+  # latent_height: int = 128
   # latent_width: int = 97
   predicts: Tensor = predicts.transpose(2,1).unflatten(2, (latent_height, -1)).contiguous()
   predicts: Tensor = predicts.round().clamp(0, 255).to(dtype=torch.uint8).cpu()
@@ -102,7 +103,7 @@ class Mode(Enum):
   Test = auto()
   VisualizeLatents = auto()
 
-mode = Mode.VisualizeLatents
+mode = Mode.Test
 match(mode):
   case Mode.Train:
     dataset: Dataset = get_data()

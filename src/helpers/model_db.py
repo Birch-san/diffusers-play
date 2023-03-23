@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from helpers.embed_text import ClipCheckpoint
+from .embed_text import ClipCheckpoint
+from .approx_decoder_ckpt import DecoderCkpt
 import torch
 from typing import Dict
 
@@ -46,6 +47,15 @@ def get_needs_upcast_attention(model_name: str, unet_dtype: torch.dtype) -> bool
 
 def get_xattn_max_context_segments(model_name: str) -> int:
   return xattn_max_context_segments[model_name] if model_name in xattn_max_context_segments else 1
+
+def get_approx_decoder_ckpt(model_name: str) -> DecoderCkpt:
+  match model_name:
+    case 'CompVis/stable-diffusion-v1-4':
+      return DecoderCkpt.SD1_4
+    case 'waifu-diffusion/wd-1-5-beta2':
+      return DecoderCkpt.WD1_5
+    case 'runwayml/stable-diffusion-v1-5' | _:
+      return DecoderCkpt.SD1_5
 
 @dataclass
 class ModelNeeds:

@@ -34,10 +34,11 @@ from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils_wd15
-from helpers.approx_decoder import Decoder, get_approx_decoder_wd_1_5
+from helpers.approx_decoder import Decoder, get_approx_decoder
+from helpers.approx_decoder_ckpt import DecoderCkpt
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
-from helpers.model_db import get_model_needs, ModelNeeds
+from helpers.model_db import get_model_needs, ModelNeeds, get_approx_decoder_ckpt
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec, ImgEncodeSpec
 from helpers.inference_spec.latents_shape import LatentsShape
@@ -165,7 +166,8 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 encode_img: EncodeImg = make_encode_img(vae)
 
-approx_decoder: Decoder = get_approx_decoder_wd_1_5(device)
+approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name)
+approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
 approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils_wd15(approx_decoder)
 
 clip_impl = ClipImplementation.HF
