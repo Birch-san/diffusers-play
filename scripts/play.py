@@ -204,11 +204,13 @@ sigmas_quantized = torch.cat([
 print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
 
 sample_path='out'
-intermediates_path='intermediates'
-for path_ in [sample_path, intermediates_path]:
+intermediates_path=f'{sample_path}/intermediates'
+latents_path=f'{sample_path}/latents'
+for path_ in [sample_path, intermediates_path, latents_path]:
   os.makedirs(path_, exist_ok=True)
 make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(latents_to_pils)
 log_intermediates_enabled = False
+save_latents_enabled = False
 
 match(model_name):
   case 'hakurei/waifu-diffusion':
@@ -479,6 +481,11 @@ with no_grad():
     del denoiser
     if device.type == 'cuda':
       torch.cuda.empty_cache()
+    
+    if save_latents_enabled:
+      for stem, sample_latents in zip(sample_stems, latents):
+        torch.save(sample_latents, os.path.join(latents_path, f"{stem}.pt"))
+
     pil_images: List[Image.Image] = latents_to_pils(latents)
     del latents
 
