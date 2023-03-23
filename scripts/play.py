@@ -35,7 +35,8 @@ from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
-from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw
+from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils_wd15
+from helpers.approx_decoder import Decoder, get_approx_decoder_wd_1_5
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds
@@ -53,7 +54,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, NamedTuple
+from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, NamedTuple, OrderedDict
 from PIL import Image
 import time
 import numpy as np
@@ -166,6 +167,9 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 encode_img: EncodeImg = make_encode_img(vae)
 
+approx_decoder: Decoder = get_approx_decoder_wd_1_5(device)
+approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils_wd15(approx_decoder)
+
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
   clip_ckpt = ClipCheckpoint.OpenAI
@@ -206,12 +210,16 @@ sigmas_quantized = torch.cat([
 print(f"sigmas (quantized):\n{', '.join(['%.4f' % s.item() for s in sigmas_quantized])}")
 
 sample_path='out'
+intermediates_path=f'{sample_path}/intermediates'
 latents_path=f'{sample_path}/latents'
-for path_ in [sample_path, latents_path]:
+for path_ in [sample_path, intermediates_path, latents_path]:
   os.makedirs(path_, exist_ok=True)
-make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(latents_to_pils)
+
+approx_intermediate_decode = True
+intermediate_latents_to_pils: LatentsToPils = approx_latents_to_pils if approx_intermediate_decode else latents_to_pils
+make_log_intermediates: LogIntermediatesFactory = make_log_intermediates_factory(intermediate_latents_to_pils)
 log_intermediates_enabled = False
-save_latents_enabled = True
+save_latents_enabled = False
 
 match(model_name):
   case 'hakurei/waifu-diffusion':
