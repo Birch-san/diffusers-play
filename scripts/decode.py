@@ -48,7 +48,7 @@ model = model.to(device)
 
 training_dtype = torch.float32
 
-epochs = 10000
+epochs = 30000
 
 loss_fn = MSELoss()
 optim = AdamW(model.parameters(), lr=9e-1)

@@ -166,7 +166,7 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 encode_img: EncodeImg = make_encode_img(vae)
 
-approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name)
+approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name, wd_prefer_1_3)
 approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
 approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils_wd15(approx_decoder)
 
