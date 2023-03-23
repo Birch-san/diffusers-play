@@ -33,7 +33,7 @@ from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
-from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils_wd15
+from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils
 from helpers.approx_decoder import Decoder, get_approx_decoder
 from helpers.approx_decoder_ckpt import DecoderCkpt
 from helpers.embed_text_types import Embed, EmbeddingAndMask
@@ -168,7 +168,7 @@ encode_img: EncodeImg = make_encode_img(vae)
 
 approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name, wd_prefer_1_3)
 approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
-approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils_wd15(approx_decoder)
+approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils(approx_decoder)
 
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:

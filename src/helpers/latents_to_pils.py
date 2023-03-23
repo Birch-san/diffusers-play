@@ -11,7 +11,7 @@ LatentsToBCHW: TypeAlias = Callable[[Tensor], Tensor]
 LatentsToPils: TypeAlias = Callable[[Tensor], List[Image.Image]]
 
 @no_grad()
-def approx_latents_to_pils_wd15(decoder: Decoder, latents: Tensor) -> Tensor:
+def approx_latents_to_pils(decoder: Decoder, latents: Tensor) -> Tensor:
   _, _, height, _ = latents.shape
   flat_channels_last: Tensor = latents.flatten(-2).transpose(-2,-1)
   decoded: Tensor = decoder.forward(flat_channels_last)
@@ -20,8 +20,8 @@ def approx_latents_to_pils_wd15(decoder: Decoder, latents: Tensor) -> Tensor:
   pil_images: List[Image.Image] = [Image.fromarray(image) for image in images]
   return pil_images
 
-def make_approx_latents_to_pils_wd15(decoder: Decoder) -> LatentsToPils:
-  return partial(approx_latents_to_pils_wd15, decoder)
+def make_approx_latents_to_pils(decoder: Decoder) -> LatentsToPils:
+  return partial(approx_latents_to_pils, decoder)
 
 @no_grad()
 def latents_to_bchw(vae: AutoencoderKL, latents: Tensor) -> Tensor:
