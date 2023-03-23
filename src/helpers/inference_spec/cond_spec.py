@@ -43,6 +43,7 @@ class CFG:
   mimic_scale: Optional[float] = None
   dynthresh_percentile: Optional[float] = None
   center_denoise_output: bool = False
+  pixel_space_dynthresh: bool = True
 
 @dataclass
 class WeightedPrompt:
