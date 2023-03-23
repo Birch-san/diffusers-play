@@ -20,6 +20,8 @@ class KarrasScheduleTemplate(Enum):
   Mastering = auto()
   # high-quality, for not-potato PC
   CudaMastering = auto()
+  # silly number of steps, for scientific demonstrations
+  Overkill = auto()
 
 def get_template_schedule(
   template: KarrasScheduleTemplate,
@@ -53,6 +55,13 @@ def get_template_schedule(
     case KarrasScheduleTemplate.CudaMastering:
       return KarrasScheduleParams(
         steps=22,
+        sigma_max=model_sigma_max,
+        sigma_min=model_sigma_min,
+        rho=7.
+      )
+    case KarrasScheduleTemplate.Overkill:
+      return KarrasScheduleParams(
+        steps=200,
         sigma_max=model_sigma_max,
         sigma_min=model_sigma_min,
         rho=7.
