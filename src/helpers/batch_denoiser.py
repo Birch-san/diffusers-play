@@ -158,8 +158,26 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     self,
     denoised_latents: FloatTensor
   ) -> FloatTensor:
-    # TODO
-    return denoised_latents
+    rgb: FloatTensor = self.dynthresh_latent_decoder(denoised_latents)
+    int8_iinfo = torch.iinfo(torch.int8)
+    int8_range = int8_iinfo.max-int8_iinfo.min
+    int8_half_range = int8_range / 2
+    centered = rgb - int8_half_range
+    normed = centered / int8_half_range
+
+    s: FloatTensor = torch.quantile(
+      normed.flatten(start_dim=1).abs(),
+      self.dynthresh_percentile,
+      dim = -1
+    )
+    s.clamp_(min = 1.)
+    s = s.reshape(*s.shape, 1, 1, 1)
+    normed.clamp(-s, s) #/ s
+    decentered = normed + 1.
+    scaled = decentered * int8_half_range
+
+    latents: FloatTensor = self.dynthresh_latent_encoder(scaled)
+    return latents
 
   def __call__(
     self,
