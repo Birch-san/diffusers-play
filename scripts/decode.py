@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from os import listdir, path, makedirs
-from torch.nn import Linear
-from torch import tensor, Tensor, IntTensor, inference_mode
+from torch.nn import Linear, PReLU
+from torch import tensor, Tensor, IntTensor, FloatTensor, inference_mode
 from helpers.device import get_device_type, DeviceLiteral
 import fnmatch
 import torch
@@ -11,47 +11,64 @@ from typing import List
 import numpy as np
 from torchvision.io import read_image, write_png
 from torchvision.transforms.functional import resize, InterpolationMode
-from torch.nn import MSELoss, Module
+from torch.nn import MSELoss, L1Loss, Module
 from torch.optim import AdamW
 from enum import Enum, auto
 from torch.nn.functional import normalize
 
+int8_iinfo = torch.iinfo(torch.int8)
+int8_range = int8_iinfo.max-int8_iinfo.min
+int8_half_range = int8_range / 2
+
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
-assets_dir = 'out_learn'
+assets_dir = 'out_learn_wd1.3'
 samples_dir=path.join(assets_dir, 'samples')
 inputs_dir=path.join(assets_dir, 'pt')
 test_inputs_dir=path.join(assets_dir, 'test_pt')
-predictions_dir=path.join(assets_dir, 'test_pred')
+predictions_dir=path.join(assets_dir, 'test_pred2')
 science_dir=path.join(assets_dir, 'science')
 weights_dir=path.join(assets_dir, 'weights')
 for path_ in [weights_dir, predictions_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
-weights_path = path.join(weights_dir, "model.pt")
+weights_path = path.join(weights_dir, "decoder2.pt")
 
-class Decoder(Module):
+class Decoder2(Module):
   lin: Linear
-  def __init__(self) -> None:
+  def __init__(self, inner_dim: int) -> None:
     super().__init__()
-    self.lin = Linear(4, 3, True)
+    self.lin1 = Linear(4, inner_dim, True)
+    self.nonlin = PReLU()
+    self.lin2 = Linear(inner_dim, 3, True)
   
-  def forward(self, input: Tensor) -> Tensor:
-    output: Tensor = self.lin(input)
-    return output
+  def forward(self, sample: Tensor) -> Tensor:
+    sample: Tensor = self.lin1(sample)
+    sample: Tensor = self.nonlin(sample)
+    sample: Tensor = self.lin2(sample)
+    return sample
 
-model = Decoder()
-if path.exists(weights_path):
+class Mode(Enum):
+  Train = auto()
+  Test = auto()
+  VisualizeLatents = auto()
+mode = Mode.Train
+test_after_train=True
+resume_training=False
+
+model = Decoder2(inner_dim=12)
+if path.exists(weights_path) and resume_training or mode is not Mode.Train:
   model.load_state_dict(torch.load(weights_path, weights_only=True))
 model = model.to(device)
 
 training_dtype = torch.float32
 
-epochs = 30000
+epochs = 3000
 
-loss_fn = MSELoss()
-optim = AdamW(model.parameters(), lr=9e-1)
+l2_loss = MSELoss(reduction='mean')
+l1_loss = L1Loss()
+optim = AdamW(model.parameters(), lr=1e-1)
 
 @dataclass
 class Dataset:
@@ -68,11 +85,19 @@ def get_data() -> Dataset:
   vae_scale_factor = 8
   scaled_height = height//vae_scale_factor
   scaled_width = width//vae_scale_factor
-  train_outputs: Tensor = resize(torch.stack(images), [scaled_height, scaled_width], InterpolationMode.BICUBIC).flatten(-2).transpose(-2,-1).to(training_dtype).contiguous()
+  train_outputs: FloatTensor = resize(torch.stack(images), [scaled_height, scaled_width], InterpolationMode.BICUBIC).flatten(-2).transpose(-2,-1).to(training_dtype).contiguous()
+  train_outputs = train_outputs-int8_half_range
+  train_outputs = train_outputs/int8_half_range
   return Dataset(
     train_inputs=train_inputs,
     train_outputs=train_outputs,
   )
+
+def loss_fn(input: FloatTensor, target: FloatTensor) -> FloatTensor:
+  # return l2_loss(input, target) #+ l1_loss(input, target)
+  # return l2_loss(input, target) + 0.1 * l1_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)
+  return l2_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)**2
+  # return l2_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)
 
 def train(epoch: int, dataset: Dataset):
   model.train()
@@ -82,7 +107,7 @@ def train(epoch: int, dataset: Dataset):
   loss.backward()
   optim.step()
   if epoch % 100 == 0:
-    print(f'epoch {epoch:04d}, loss: {loss.item():.2f}')
+    print(f'epoch {epoch:04d}, loss: {loss.item():.2f}, abs().max(): {out.abs().max().item():.2f}')
 
 @inference_mode(True)
 def test():
@@ -94,22 +119,21 @@ def test():
   # latent_height: int = 128
   # latent_width: int = 97
   predicts: Tensor = predicts.transpose(2,1).unflatten(2, (latent_height, -1)).contiguous()
+  predicts = predicts + 1
+  predicts = predicts * int8_half_range
   predicts: Tensor = predicts.round().clamp(0, 255).to(dtype=torch.uint8).cpu()
   for prediction, input_path in zip(predicts, test_input_paths):
     write_png(prediction, path.join(predictions_dir, input_path.replace('pt', 'png')))
 
-class Mode(Enum):
-  Train = auto()
-  Test = auto()
-  VisualizeLatents = auto()
-
-mode = Mode.Test
 match(mode):
   case Mode.Train:
     dataset: Dataset = get_data()
     for epoch in range(epochs):
       train(epoch, dataset)
+    del dataset
     torch.save(model.state_dict(), weights_path)
+    if test_after_train:
+      test()
   case Mode.Test:
     test()
   case Mode.VisualizeLatents:
