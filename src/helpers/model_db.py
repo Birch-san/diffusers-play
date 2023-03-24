@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from .embed_text import ClipCheckpoint
 from .approx_decoder_ckpt import DecoderCkpt
+from .approx_encoder_ckpt import EncoderCkpt
 import torch
 from typing import Dict
 
@@ -58,6 +59,11 @@ def get_approx_decoder_ckpt(model_name: str, wd_prefer_1_3: bool) -> DecoderCkpt
       return DecoderCkpt.WD1_5
     case 'runwayml/stable-diffusion-v1-5' | _:
       return DecoderCkpt.SD1_5
+
+def get_approx_encoder_ckpt(model_name: str, wd_prefer_1_3: bool) -> EncoderCkpt:
+  match model_name:
+    case 'runwayml/stable-diffusion-v1-5' | _:
+      return EncoderCkpt.SD1_5
 
 @dataclass
 class ModelNeeds:
