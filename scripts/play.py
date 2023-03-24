@@ -37,9 +37,11 @@ from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils
 from helpers.approx_decoder import Decoder, get_approx_decoder
 from helpers.approx_decoder_ckpt import DecoderCkpt
+from helpers.approx_encoder import Encoder, get_approx_encoder
+from helpers.approx_encoder_ckpt import EncoderCkpt
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
-from helpers.model_db import get_model_needs, ModelNeeds, get_approx_decoder_ckpt
+from helpers.model_db import get_model_needs, ModelNeeds, get_approx_decoder_ckpt, get_approx_encoder_ckpt
 from helpers.inference_spec.sample_spec import SampleSpec
 from helpers.inference_spec.latent_spec import SeedSpec, ImgEncodeSpec
 from helpers.inference_spec.latents_shape import LatentsShape
@@ -168,9 +170,11 @@ encode_img: EncodeImg = make_encode_img(vae)
 
 approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name, wd_prefer_1_3)
 approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
+approx_encoder_ckpt: EncoderCkpt = get_approx_encoder_ckpt(model_name, wd_prefer_1_3)
+approx_encoder: Encoder = get_approx_encoder(approx_encoder_ckpt, device)
 approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils(approx_decoder)
 dynthresh_decoder: LatentsToRGB = make_approx_latents_to_rgb(approx_decoder)
-dynthresh_encoder: RGBToLatents = make_approx_rgb_to_latents(approx_decoder)
+dynthresh_encoder: RGBToLatents = make_approx_rgb_to_latents(approx_encoder)
 
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
