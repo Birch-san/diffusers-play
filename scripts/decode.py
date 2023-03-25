@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from os import listdir, path, makedirs
-from torch.nn import Linear, PReLU
+from torch.nn import Linear, SiLU
 from torch import tensor, Tensor, IntTensor, FloatTensor, inference_mode
 from helpers.device import get_device_type, DeviceLiteral
 import fnmatch
@@ -27,21 +27,21 @@ assets_dir = 'out_learn_wd1.3'
 samples_dir=path.join(assets_dir, 'samples')
 inputs_dir=path.join(assets_dir, 'pt')
 test_inputs_dir=path.join(assets_dir, 'test_pt')
-predictions_dir=path.join(assets_dir, 'test_pred2')
+predictions_dir=path.join(assets_dir, 'test_pred3')
 science_dir=path.join(assets_dir, 'science')
 weights_dir=path.join(assets_dir, 'weights')
 for path_ in [weights_dir, predictions_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
-weights_path = path.join(weights_dir, "decoder2.pt")
+weights_path = path.join(weights_dir, "decoder3.pt")
 
-class Decoder2(Module):
+class Decoder3(Module):
   lin: Linear
   def __init__(self, inner_dim: int) -> None:
     super().__init__()
-    self.lin1 = Linear(4, inner_dim, True)
-    self.nonlin = PReLU()
-    self.lin2 = Linear(inner_dim, 3, True)
+    self.lin1 = Linear(4, inner_dim)
+    self.nonlin = SiLU()
+    self.lin2 = Linear(inner_dim, 3)
   
   def forward(self, sample: Tensor) -> Tensor:
     sample: Tensor = self.lin1(sample)
@@ -57,7 +57,7 @@ mode = Mode.Train
 test_after_train=True
 resume_training=False
 
-model = Decoder2(inner_dim=12)
+model = Decoder3(inner_dim=12)
 if path.exists(weights_path) and resume_training or mode is not Mode.Train:
   model.load_state_dict(torch.load(weights_path, weights_only=True))
 model = model.to(device)
@@ -68,7 +68,7 @@ epochs = 3000
 
 l2_loss = MSELoss(reduction='mean')
 l1_loss = L1Loss()
-optim = AdamW(model.parameters(), lr=1e-1)
+optim = AdamW(model.parameters(), lr=5e-2)
 
 @dataclass
 class Dataset:
@@ -94,10 +94,7 @@ def get_data() -> Dataset:
   )
 
 def loss_fn(input: FloatTensor, target: FloatTensor) -> FloatTensor:
-  # return l2_loss(input, target) #+ l1_loss(input, target)
-  # return l2_loss(input, target) + 0.1 * l1_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)
   return l2_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)**2
-  # return l2_loss(input, target) + 0.1 * (input.abs().max() - 1).clamp(min=0)
 
 def train(epoch: int, dataset: Dataset):
   model.train()
