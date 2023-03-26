@@ -172,7 +172,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     )
     s.clamp_(min = 1.)
     s = s.reshape(*s.shape, 1, 1, 1)
-    normed.clamp(-s, s) #/ s
+    normed.clamp(-s, s) / s
     decentered = normed + 1.
     scaled = decentered * int8_half_range
 
