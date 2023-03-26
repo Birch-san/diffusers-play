@@ -155,15 +155,26 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
-    noised_latents_in: FloatTensor = noised_latents.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
+    disable_cfg = sigma.item()<0.92
+    if disable_cfg:
+      cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
+      cross_attention_bias = self.cross_attention_bias.index_select(0, self.cond_ixs)
+      conds_per_prompt = self.conds_per_prompt-1
+      cond_count = cross_attention_conds.size(0)
+    else:
+      cross_attention_conds = self.cross_attention_conds
+      cross_attention_bias = self.cross_attention_bias
+      conds_per_prompt = self.conds_per_prompt
+      cond_count = self.cond_count
+    noised_latents_in: FloatTensor = noised_latents.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del noised_latents
-    sigma_in: FloatTensor = sigma.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
+    sigma_in: FloatTensor = sigma.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del sigma
     denoised_latents: FloatTensor = self.denoiser.forward(
       input=noised_latents_in,
       sigma=sigma_in,
-      encoder_hidden_states=self.cross_attention_conds,
-      cross_attention_bias=self.cross_attention_bias,
+      encoder_hidden_states=cross_attention_conds,
+      cross_attention_bias=cross_attention_bias,
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
@@ -172,6 +183,8 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
         denoised_latents,
       )
     del noised_latents_in, sigma_in
+    if disable_cfg:
+      return denoised_latents
     unconds: FloatTensor = denoised_latents.index_select(0, self.uncond_ixs)
     conds: FloatTensor = denoised_latents.index_select(0, self.cond_ixs)
     del denoised_latents
