@@ -7,15 +7,15 @@ import torch
 
 class Encoder(Module):
   # lin: Linear
-  conv: Conv2d
+  proj: Conv2d
   def __init__(self) -> None:
     super().__init__()
     # self.lin = Linear(3, 4, True)
-    self.conv = Conv2d(3, 4, kernel_size=3, padding=1)
+    self.proj = Conv2d(3, 4, kernel_size=3, padding=1)
   
   def forward(self, input: Tensor) -> Tensor:
     # output: Tensor = self.lin(input)
-    output: Tensor = self.conv(input)
+    output: Tensor = self.proj(input)
     return output
 
 def get_approx_encoder(encoder_ckpt: EncoderCkpt, device: torch.device = torch.device('cpu')) -> Encoder:
