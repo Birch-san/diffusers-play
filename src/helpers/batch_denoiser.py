@@ -5,6 +5,8 @@ import torch
 from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
+from .attention.null_attn import replace_basic_transformer_block_to_tap_module, to_null_basic_transformer_block
+from .tap.tap_module import TapModule
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -155,7 +157,10 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
-    disable_cfg = sigma.item()<0.92
+    disable_attn = sigma.item()<0.92
+    # disable CFG if there's no attn (because you need cross-attn to do CFG)
+    # you could consider disabling CFG from a higher sigma than when you disable attn
+    disable_cfg = disable_attn or sigma.item()<0.92
     if disable_cfg:
       cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
       cross_attention_bias = self.cross_attention_bias.index_select(0, self.cond_ixs)
@@ -166,6 +171,11 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       cross_attention_bias = self.cross_attention_bias
       conds_per_prompt = self.conds_per_prompt
       cond_count = self.cond_count
+    if disable_attn:
+      # TODO: undo this after we've finished denoising this batch (set them back to using CrossAttention class)
+      # tap_module: TapModule = replace_attn_to_tap_module(to_null_attn)
+      tap_module: TapModule = replace_basic_transformer_block_to_tap_module(to_null_basic_transformer_block)
+      self.denoiser.inner_model.apply(tap_module)
     noised_latents_in: FloatTensor = noised_latents.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del noised_latents
     sigma_in: FloatTensor = sigma.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
