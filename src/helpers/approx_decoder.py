@@ -1,18 +1,21 @@
 from os import path
 from torch import Tensor, load
-from torch.nn import Module, Linear
+from torch.nn import Module, Linear, Conv2d
 from typing import OrderedDict
 from .approx_decoder_ckpt import DecoderCkpt, approx_decoder_ckpt_filenames
 import torch
 
 class Decoder(Module):
-  lin: Linear
+  # lin: Linear
+  conv: Conv2d
   def __init__(self) -> None:
     super().__init__()
-    self.lin = Linear(4, 3, True)
+    # self.lin = Linear(4, 3, True)
+    self.conv = Conv2d(4, 3, kernel_size=3, padding=1)
   
   def forward(self, input: Tensor) -> Tensor:
-    output: Tensor = self.lin(input)
+    # output: Tensor = self.lin(input)
+    output: Tensor = self.conv(input)
     return output
 
 def get_approx_decoder(decoder_ckpt: DecoderCkpt, device: torch.device = torch.device('cpu')) -> Decoder:  

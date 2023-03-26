@@ -18,7 +18,7 @@ int8_half_range = int8_range / 2
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
-assets_dir = 'out_learn_wd1.3'
+assets_dir = 'out_learn_sd1.5'
 samples_dir=path.join(assets_dir, 'samples')
 inputs_dir=path.join(assets_dir, 'pt')
 test_inputs_dir=path.join(assets_dir, 'test_pt')
