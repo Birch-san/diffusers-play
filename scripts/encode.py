@@ -14,6 +14,10 @@ from torch.optim import AdamW
 from enum import Enum, auto
 from torch.nn.functional import normalize
 
+int8_iinfo = torch.iinfo(torch.int8)
+int8_range = int8_iinfo.max-int8_iinfo.min
+int8_half_range = int8_range / 2
+
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
@@ -70,6 +74,8 @@ def get_data() -> Dataset:
   scaled_height = height//vae_scale_factor
   scaled_width = width//vae_scale_factor
   sample_inputs: Tensor = resize(torch.stack(images), [scaled_height, scaled_width], InterpolationMode.BICUBIC).to(training_dtype).contiguous()
+  sample_inputs = sample_inputs-int8_half_range
+  sample_inputs = sample_inputs/int8_half_range
   return Dataset(
     sample_inputs=sample_inputs,
     latent_outputs=latent_outputs,
