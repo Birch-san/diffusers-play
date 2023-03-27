@@ -26,7 +26,7 @@ cd src/diffusers
 python setup.py install
 cd ../..
 # and everything else we missed
-pip install transformers safetensors easing-functions
+pip install transformers safetensors easing-functions opencv-python
 ```
 
 Treat yourself to ipython:
