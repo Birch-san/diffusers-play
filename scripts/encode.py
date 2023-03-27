@@ -20,7 +20,8 @@ int8_half_range = int8_range / 2
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
-assets_dir = 'out_learn_wd1.3'
+model_shortname = 'sd1.5'
+assets_dir = f'out_learn_{model_shortname}'
 samples_dir=join(assets_dir, 'samples')
 processed_train_data_dir=join(assets_dir, 'processed_train_data')
 processed_test_data_dir=join(assets_dir, 'processed_test_data')
@@ -31,7 +32,7 @@ weights_dir=join(assets_dir, 'weights')
 for path_ in [weights_dir, processed_train_data_dir, processed_test_data_dir]:
   makedirs(path_, exist_ok=True)
 
-weights_path = join(weights_dir, 'approx_encoder3_wd1.3.pt')
+weights_path = join(weights_dir, f'approx_encoder3_{model_shortname}.pt')
 
 class Encoder3(Module):
   in_proj: Linear
