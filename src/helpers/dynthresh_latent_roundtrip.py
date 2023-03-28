@@ -2,7 +2,6 @@ from torch import FloatTensor, no_grad
 from typing import Protocol
 from .approx_decoder import Decoder
 from .approx_encoder import Encoder
-import torch
 from functools import partial
 
 class LatentsToRGB(Protocol):
@@ -11,34 +10,36 @@ class LatentsToRGB(Protocol):
 class RGBToLatents(Protocol):
   def __call__(rgb: FloatTensor) -> FloatTensor: ...
 
-int8_iinfo = torch.iinfo(torch.int8)
-int8_range = int8_iinfo.max-int8_iinfo.min
-int8_half_range = int8_range / 2
-
 @no_grad()
 def approx_latents_to_rgb(decoder: Decoder, latents: FloatTensor) -> FloatTensor:
-  batch, channels, height, width = latents.shape
-  flat_channels_last: FloatTensor = latents.flatten(-2).transpose(-2,-1)
-  decoded: FloatTensor = decoder.forward(flat_channels_last)
-  unflat: FloatTensor = decoded.unflatten(-2, (height, -1))
-
-#   centered = unflat - int8_half_range
-#   normed = centered / int8_half_range
-#   images: FloatTensor = unflat.round().clamp(0, 255).to(dtype=torch.uint8).cpu().numpy()
-#   pil_images: List[Image.Image] = [Image.fromarray(image) for image in images]
-  return unflat
+  """
+  latents: [b,c,h,w]
+  decoder: [b,h,w,c] -> [b,h,w,c]
+  returns: [b,c,h,w]
+  outputs RGB nominally in the range ±1
+  but at high CFG will exceed this
+  """
+  channels_last: FloatTensor = latents.permute(0, 2, 3, 1)
+  decoded: FloatTensor = decoder.forward(channels_last)
+  channels_first: FloatTensor = decoded.permute(0, 3, 1, 2)
+  return channels_first
 
 def make_approx_latents_to_rgb(decoder: Decoder) -> LatentsToRGB:
   return partial(approx_latents_to_rgb, decoder)
 
 @no_grad()
 def approx_rgb_to_latents(encoder: Encoder, rgb: FloatTensor) -> FloatTensor:
-  batch, height, width, channels = rgb.shape
-  flat: FloatTensor = rgb.flatten(start_dim=-3, end_dim=-2)
-  decoded: FloatTensor = encoder.forward(flat)
-  channels_first: FloatTensor = decoded.transpose(-1, -2)
-  unflat: FloatTensor = channels_first.unflatten(-1, (height, -1))
-  return unflat
+  """
+      rgb: [b,c,h,w]
+  encoder: [b,h,w,c] -> [b,h,w,c]
+  returns: [b,c,h,w]
+  expects to output RGB nominally in the range ±1,
+  except if your latents were created at high CFG
+  """
+  channels_last: FloatTensor = rgb.permute(0, 2, 3, 1)
+  encoded: FloatTensor = encoder.forward(channels_last)
+  channels_first: FloatTensor = encoded.permute(0, 3, 1, 2)
+  return channels_first
 
 def make_approx_rgb_to_latents(encoder: Encoder) -> RGBToLatents:
   return partial(approx_rgb_to_latents, encoder)

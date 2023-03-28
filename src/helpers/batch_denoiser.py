@@ -159,24 +159,17 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     denoised_latents: FloatTensor
   ) -> FloatTensor:
     rgb: FloatTensor = self.dynthresh_latent_decoder(denoised_latents)
-    int8_iinfo = torch.iinfo(torch.int8)
-    int8_range = int8_iinfo.max-int8_iinfo.min
-    int8_half_range = int8_range / 2
-    centered = rgb - int8_half_range
-    normed = centered / int8_half_range
 
     s: FloatTensor = torch.quantile(
-      normed.flatten(start_dim=1).abs(),
+      rgb.flatten(start_dim=1).abs(),
       self.dynthresh_percentile,
       dim = -1
     )
     s.clamp_(min = 1.)
     s = s.reshape(*s.shape, 1, 1, 1)
-    normed.clamp(-s, s) #/ s
-    decentered = normed + 1.
-    scaled = decentered * int8_half_range
+    rgb = rgb.clamp(-s, s) / s
 
-    latents: FloatTensor = self.dynthresh_latent_encoder(scaled)
+    latents: FloatTensor = self.dynthresh_latent_encoder(rgb)
     return latents
 
   def __call__(
@@ -184,15 +177,26 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
-    noised_latents_in: FloatTensor = noised_latents.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
+    disable_cfg = sigma[0].item()<1.4
+    if disable_cfg:
+      cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
+      cross_attention_mask = self.cross_attention_mask.index_select(0, self.cond_ixs)
+      conds_per_prompt = self.conds_per_prompt-1
+      cond_count = cross_attention_conds.size(0)
+    else:
+      cross_attention_conds = self.cross_attention_conds
+      cross_attention_mask = self.cross_attention_mask
+      conds_per_prompt = self.conds_per_prompt
+      cond_count = self.cond_count
+    noised_latents_in: FloatTensor = noised_latents.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del noised_latents
-    sigma_in: FloatTensor = sigma.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
+    sigma_in: FloatTensor = sigma.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del sigma
     denoised_latents: FloatTensor = self.denoiser.forward(
       input=noised_latents_in,
       sigma=sigma_in,
-      encoder_hidden_states=self.cross_attention_conds,
-      attention_mask=self.cross_attention_mask,
+      encoder_hidden_states=cross_attention_conds,
+      cross_attention_mask=cross_attention_mask,
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
@@ -201,6 +205,8 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
         denoised_latents,
       )
     del noised_latents_in, sigma_in
+    if disable_cfg:
+      return denoised_latents
     unconds: FloatTensor = denoised_latents.index_select(0, self.uncond_ixs)
     conds: FloatTensor = denoised_latents.index_select(0, self.cond_ixs)
     del denoised_latents

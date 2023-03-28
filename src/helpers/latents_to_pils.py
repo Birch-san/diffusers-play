@@ -10,13 +10,17 @@ import torch
 LatentsToBCHW: TypeAlias = Callable[[Tensor], Tensor]
 LatentsToPils: TypeAlias = Callable[[Tensor], List[Image.Image]]
 
+int8_iinfo = torch.iinfo(torch.int8)
+int8_range = int8_iinfo.max-int8_iinfo.min
+int8_half_range = int8_range / 2
+
 @no_grad()
 def approx_latents_to_pils(decoder: Decoder, latents: Tensor) -> Tensor:
-  _, _, height, _ = latents.shape
-  flat_channels_last: Tensor = latents.flatten(-2).transpose(-2,-1)
-  decoded: Tensor = decoder.forward(flat_channels_last)
-  unflat: Tensor = decoded.unflatten(-2, (height, -1))
-  images: Tensor = unflat.round().clamp(0, 255).to(dtype=torch.uint8).cpu().numpy()
+  channels_last: Tensor = latents.permute(0, 2, 3, 1)
+  decoded: Tensor = decoder.forward(channels_last)
+  decoded = decoded * int8_half_range
+  decoded = decoded + int8_half_range
+  images: Tensor = decoded.round().clamp(0, 255).to(dtype=torch.uint8).cpu().numpy()
   pil_images: List[Image.Image] = [Image.fromarray(image) for image in images]
   return pil_images
 
