@@ -177,7 +177,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
-    disable_cfg = sigma[0].item()<1.4
+    disable_cfg = False # sigma[0].item()<1.1
     if disable_cfg:
       cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
       cross_attention_mask = self.cross_attention_mask.index_select(0, self.cond_ixs)
