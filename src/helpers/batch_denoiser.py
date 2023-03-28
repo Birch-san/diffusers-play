@@ -183,7 +183,10 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       cross_attention_mask = self.cross_attention_mask.index_select(0, self.cond_ixs)
       conds_per_prompt = self.conds_per_prompt-1
       cond_count = cross_attention_conds.size(0)
+      if self.center_denoise_outputs is not None:
+        center_denoise_outputs = self.center_denoise_outputs.index_select(0, self.cond_ixs)
     else:
+      center_denoise_outputs = self.center_denoise_outputs
       cross_attention_conds = self.cross_attention_conds
       cross_attention_mask = self.cross_attention_mask
       conds_per_prompt = self.conds_per_prompt
@@ -200,7 +203,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
-        self.center_denoise_outputs,
+        center_denoise_outputs,
         denoised_latents-denoised_latents.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(denoised_latents.shape),
         denoised_latents,
       )
