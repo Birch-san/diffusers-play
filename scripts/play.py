@@ -7,7 +7,7 @@ from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
-from helpers.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents, make_approx_latents_to_rgb, make_approx_rgb_to_latents
+from helpers.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents, make_approx_latents_to_rgb, make_approx_rgb_to_latents, make_real_latents_to_rgb, make_real_rgb_to_latents
 from helpers.encode_img import EncodeImg, make_encode_img
 from helpers.file_naming import get_sample_stem
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
@@ -168,13 +168,18 @@ latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 encode_img: EncodeImg = make_encode_img(vae)
 
+dynthresh_use_approx_vae = False
 approx_decoder_ckpt: DecoderCkpt = get_approx_decoder_ckpt(model_name, wd_prefer_1_3)
 approx_decoder: Decoder = get_approx_decoder(approx_decoder_ckpt, device)
 approx_encoder_ckpt: EncoderCkpt = get_approx_encoder_ckpt(model_name, wd_prefer_1_3)
 approx_encoder: Encoder = get_approx_encoder(approx_encoder_ckpt, device)
 approx_latents_to_pils: LatentsToPils = make_approx_latents_to_pils(approx_decoder)
-dynthresh_decoder: LatentsToRGB = make_approx_latents_to_rgb(approx_decoder)
-dynthresh_encoder: RGBToLatents = make_approx_rgb_to_latents(approx_encoder)
+approx_dynthresh_decoder: LatentsToRGB = make_approx_latents_to_rgb(approx_decoder)
+approx_dynthresh_encoder: RGBToLatents = make_approx_rgb_to_latents(approx_encoder)
+real_dynthresh_decoder: LatentsToRGB = make_real_latents_to_rgb(vae)
+real_dynthresh_encoder: RGBToLatents = make_real_rgb_to_latents(vae)
+dynthresh_decoder: LatentsToRGB = approx_dynthresh_decoder if dynthresh_use_approx_vae else real_dynthresh_decoder
+dynthresh_encoder: RGBToLatents = approx_dynthresh_encoder if dynthresh_use_approx_vae else real_dynthresh_encoder
 
 clip_impl = ClipImplementation.HF
 if model_name == 'hakurei/waifu-diffusion' and wd_prefer_1_3:
