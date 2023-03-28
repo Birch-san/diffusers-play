@@ -177,6 +177,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
+    disable_dynthresh = sigma[0].item()<1.1
     disable_cfg = False # sigma[0].item()<1.1
     if disable_cfg:
       cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
@@ -218,7 +219,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     del conds, unconds_r
     unconds_backup: Optional[FloatTensor] = None if self.mimic_scaled_cond_weights is None else unconds.detach().clone()
     cfg_denoised: FloatTensor = self._compute_for_scale(unconds, diffs, self.cfg_scaled_cond_weights)
-    if self.pixel_space_dynthresh and self.dynthresh_percentile is not None:
+    if self.pixel_space_dynthresh and self.dynthresh_percentile is not None and not disable_dynthresh:
       cfg_denoised = self._pixel_space_dynthresh(cfg_denoised)
     if self.mimic_scaled_cond_weights is None:
       return cfg_denoised
