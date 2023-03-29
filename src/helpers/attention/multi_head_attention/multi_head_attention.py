@@ -29,20 +29,18 @@ class MultiheadAttention(nn.MultiheadAttention, AttnCompatible):
         hidden_states: Tensor,
         encoder_hidden_states: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
-        cross_attn_mask: Optional[Tensor] = None,
         **cross_attention_kwargs,
     ) -> Tensor:
         kv = hidden_states if encoder_hidden_states is None else encoder_hidden_states
-        if cross_attn_mask is not None:
-            cross_attn_mask = cross_attn_mask.repeat_interleave(self.num_heads, dim=0)
-            cross_attn_mask = cross_attn_mask.unsqueeze(-2)
+        if attention_mask is not None:
+            attention_mask = attention_mask.repeat_interleave(self.num_heads, dim=0)
             _, vision_tokens, _ = hidden_states.shape
-            cross_attn_mask = cross_attn_mask.expand(-1, vision_tokens, -1)
+            attention_mask = attention_mask.expand(-1, vision_tokens, -1)
         out, _ = super().forward(
             query=hidden_states,
             key=kv,
             value=kv,
             need_weights=False,
-            attn_mask=cross_attn_mask,
+            attn_mask=attention_mask,
         )
         return out

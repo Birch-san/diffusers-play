@@ -21,6 +21,7 @@ print(reassuring_message_2)
 
 import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
+from torch.nn.functional import pad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0, SlicedAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
@@ -489,7 +490,27 @@ with no_grad():
       # xformers attn_bias is only implemented for Triton + A100 GPU
       # https://github.com/facebookresearch/xformers/issues/576
       # chunked attention *can* be made to support masks, but I didn't implement it yet
-      case AttentionMode.Xformers | AttentionMode.Chunked | AttentionMode.ScaledDPAttn:
+      case AttentionMode.Xformers:
+        from packaging import version
+        from xformers import __version__ as xformers_version
+        # attn bias support was/will be added in 0.0.17:
+        # https://github.com/facebookresearch/xformers/blob/main/CHANGELOG.md
+        if version.parse(xformers_version) >= version.parse('0.0.17'):
+          # cutlassF is our best bet, but currently only supports token lengths which are multiples of 8
+          # https://gist.github.com/Birch-san/0c36d228e1d4b881a06d1c6e5289d569
+          # strictly speaking we should worry that making the key slightly longer, slightly
+          # affects the softmax averaging. oh well.
+          # https://github.com/lllyasviel/ControlNet/discussions/12
+          mask_length = mask_denorm.shape[-1]
+          extra_tokens_needed = 8 - (mask_length % 8)
+          # 0-pad mask to multiple of 8 tokens
+          mask_denorm = pad(mask_denorm, (0, extra_tokens_needed))
+          # replicate-pad embedding to multiple of 8 tokens (mask will hide the extra tokens)
+          embedding_denorm = pad(embedding_denorm, (0, 0, 0, extra_tokens_needed,), 'replicate')
+        else:
+          # if you're older than that, then we discard the masks
+          mask_denorm = None
+      case AttentionMode.Chunked:
         mask_denorm = None
 
     denoiser: Denoiser = denoiser_factory(
