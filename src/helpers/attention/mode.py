@@ -1,14 +1,18 @@
 from enum import Enum, auto
 
 class AttentionMode(Enum):
-    # usual diffusers Attention layer, AttnProcessor via baddbmm(), bmm()
+    # accept diffusers' default attention processor (picks AttnProcessor2_0 if PyTorch supports it)
     Standard = auto()
+    # AttnProcessor; uses baddbmm(), bmm()
+    Classic = auto()
+    # SlicedAttnProcessor; uses baddbmm(), bmm()
+    Sliced = auto()
     # https://github.com/huggingface/diffusers/issues/1892
-    # usual diffusers Attention layer, AttnProcessor via torch.narrow()'d baddbmm(), bmm()s ("memory-efficient" in pure PyTorch)
+    # [not available on current branch] "memory-efficient" in pure PyTorch: torch.narrow()'d baddbmm(), bmm()s
     Chunked = auto()
     # replaces diffusers' Attention layers with torch.nn.MultiheadAttention
     TorchMultiheadAttention = auto()
-    # usual diffusers Attention layer, AttnProcessor via torch.nn.functional.scaled_dot_product_attention
+    # AttnProcessor2_0; uses torch.nn.functional.scaled_dot_product_attention
     ScaledDPAttn = auto()
-    # usual diffusers Attention layer, AttnProcessor via Xformers
+    # XFormersAttnProcessor
     Xformers = auto()

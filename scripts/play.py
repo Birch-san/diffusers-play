@@ -22,7 +22,7 @@ print(reassuring_message_2)
 import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
-from diffusers.models.attention_processor import AttnProcessor2_0
+from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0, SlicedAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 
@@ -126,9 +126,13 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.ScaledDPAttn
+attn_mode = AttentionMode.Sliced
 match(attn_mode):
   case AttentionMode.Standard: pass
+  case AttentionMode.Classic:
+    unet.set_attn_processor(AttnProcessor())
+  case AttentionMode.Sliced:
+    unet.set_attn_processor(SlicedAttnProcessor(slice_size=2))
   case AttentionMode.Chunked:
     set_chunked_attn: TapAttn = make_set_chunked_attn(
       query_chunk_size = 1024,
