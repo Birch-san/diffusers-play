@@ -22,7 +22,7 @@ print(reassuring_message_2)
 import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
-from diffusers.models.cross_attention import AttnProcessor2_0
+from diffusers.models.attention_processor import AttnProcessor2_0
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 

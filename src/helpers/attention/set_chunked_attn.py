@@ -1,6 +1,5 @@
-from torch import nn
 from typing import Optional
-from diffusers.models.attention import CrossAttention
+from diffusers.models.attention import Attention
 from .tap_attn import TapAttn
 
 def make_set_chunked_attn(
@@ -9,7 +8,7 @@ def make_set_chunked_attn(
   kv_chunk_size_min: Optional[int] = None,
   chunk_threshold_bytes: Optional[int] = None,
 ) -> TapAttn:
-  def set_chunked_attn(module: CrossAttention) -> None:
+  def set_chunked_attn(module: Attention) -> None:
     module.set_subquadratic_attention(
       query_chunk_size=query_chunk_size,
       kv_chunk_size=kv_chunk_size,

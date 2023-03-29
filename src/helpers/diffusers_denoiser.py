@@ -18,13 +18,13 @@ class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
     timestep: Union[Tensor, float, int],
     encoder_hidden_states: Tensor,
     return_dict: bool = True,
-    attention_mask: Optional[BoolTensor] = None,
+    cross_attention_mask: Optional[BoolTensor] = None,
   ) -> Tensor:
     # cross_attn_mask is a proposal from my xattn_mask_2 branch of diffusers:
     # https://github.com/huggingface/diffusers/issues/1890
     # don't pass it in if we don't have to, to ensure compatibility with main branch of diffusers
-    attn_kwargs = {} if attention_mask is None else {
-      'cross_attn_mask': attention_mask,
+    attn_kwargs = {} if cross_attention_mask is None else {
+      'cross_attn_mask': cross_attention_mask,
     }
     out: UNet2DConditionOutput = self.inner_model(
       sample.to(self.inner_model.dtype),
@@ -51,13 +51,13 @@ class DiffusersSD2Denoiser(DiscreteVDDPMDenoiser):
     timestep: Union[Tensor, float, int],
     encoder_hidden_states: Tensor,
     return_dict: bool = True,
-    attention_mask: Optional[BoolTensor] = None,
+    cross_attention_mask: Optional[BoolTensor] = None,
     ) -> Tensor:
     # cross_attn_mask is a proposal from my xattn_mask_2 branch of diffusers:
     # https://github.com/huggingface/diffusers/issues/1890
     # don't pass it in if we don't have to, to ensure compatibility with main branch of diffusers
-    attn_kwargs = {} if attention_mask is None else {
-      'cross_attn_mask': attention_mask,
+    attn_kwargs = {} if cross_attention_mask is None else {
+      'cross_attn_mask': cross_attention_mask,
     }
     out: UNet2DConditionOutput = self.inner_model(
       sample.to(self.inner_model.dtype),

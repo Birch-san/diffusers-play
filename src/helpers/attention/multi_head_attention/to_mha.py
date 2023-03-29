@@ -1,8 +1,8 @@
-from diffusers.models.attention import CrossAttention
+from diffusers.models.attention import Attention
 from .multi_head_attention import MultiheadAttention
 from torch import cat
 
-def to_mha(ca: CrossAttention) -> MultiheadAttention:
+def to_mha(ca: Attention) -> MultiheadAttention:
     bias = ca.to_k.bias is not None
     assert bias == False
     mha = MultiheadAttention(

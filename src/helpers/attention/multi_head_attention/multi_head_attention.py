@@ -1,8 +1,8 @@
 from torch import nn, Tensor
 from typing import Optional
-from ..attn_compatible import CrossAttnCompatible
+from ..attn_compatible import AttnCompatible
 
-class MultiheadAttention(nn.MultiheadAttention, CrossAttnCompatible):
+class MultiheadAttention(nn.MultiheadAttention, AttnCompatible):
     def __init__(
         self,
         query_dim: int,

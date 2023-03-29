@@ -1,7 +1,7 @@
 from torch import Tensor
 from typing import Protocol, Optional
 
-class CrossAttnCompatible(Protocol):
+class AttnCompatible(Protocol):
   def forward(
     self,
     hidden_states: Tensor,
