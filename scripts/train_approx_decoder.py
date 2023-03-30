@@ -2,7 +2,7 @@ from enum import Enum, auto
 import fnmatch
 import torch
 from os import listdir, makedirs
-from os.path import join, exists
+from os.path import join, dirname, exists
 from torch import Tensor, IntTensor, FloatTensor, inference_mode, load, save
 from torch.optim import AdamW
 from torchvision.io import write_png
@@ -19,7 +19,7 @@ device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
 model_shortname = 'sd1.5'
-repo_root='..'
+repo_root=join(dirname(__file__), '..')
 assets_dir = f'out_learn_{model_shortname}'
 samples_dir=join(assets_dir, 'samples')
 processed_train_data_dir=join(assets_dir, 'processed_train_data')
@@ -73,12 +73,22 @@ def test():
   get_latent_filenames: GetFileNames = lambda: fnmatch.filter(listdir(test_latents_dir), f"*.pt")
   get_sample_filenames: GetFileNames = lambda: [latent_path.replace('pt', 'png') for latent_path in get_latent_filenames()]
 
-  latents: FloatTensor = get_latents(test_latents_dir, processed_test_data_dir, get_latent_filenames)
+  latents: FloatTensor = get_latents(
+    test_latents_dir,
+    processed_test_data_dir,
+    get_latent_filenames,
+    device=device,
+  )
   # linear layers expect channels-last
   latents = latents.permute(0, 2, 3, 1).contiguous()
   latents = latents.to(training_dtype)
 
-  true_samples: IntTensor = get_resized_samples(test_samples_dir, processed_test_data_dir, get_sample_filenames)
+  true_samples: IntTensor = get_resized_samples(
+    in_dir=test_samples_dir,
+    out_dir=processed_test_data_dir,
+    get_sample_filenames=get_sample_filenames,
+    device=device,
+  )
   true_samples: FloatTensor = true_samples.to(training_dtype)
   true_samples = true_samples-int8_half_range
   true_samples = true_samples/int8_half_range
@@ -102,7 +112,13 @@ def test():
 
 match(mode):
   case Mode.Train:
-    dataset: Dataset = get_data()
+    dataset: Dataset = get_data(
+      latents_dir=latents_dir,
+      processed_train_data_dir=processed_train_data_dir,
+      samples_dir=samples_dir,
+      dtype=training_dtype,
+      device=device,
+    )
     for epoch in range(epochs):
       train(epoch, dataset)
     del dataset

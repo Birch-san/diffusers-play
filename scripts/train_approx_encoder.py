@@ -2,7 +2,7 @@ from enum import Enum, auto
 import fnmatch
 import torch
 from os import listdir, makedirs
-from os.path import join, exists
+from os.path import join, exists, dirname
 from torch import IntTensor, FloatTensor, inference_mode, load, save
 from torch.optim import AdamW
 from helpers.device import get_device_type, DeviceLiteral
@@ -18,7 +18,7 @@ device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
 model_shortname = 'sd1.5'
-repo_root='..'
+repo_root=join(dirname(__file__), '..')
 assets_dir = f'out_learn_{model_shortname}'
 samples_dir=join(assets_dir, 'samples')
 processed_train_data_dir=join(assets_dir, 'processed_train_data')
@@ -104,6 +104,7 @@ match(mode):
       processed_train_data_dir=processed_train_data_dir,
       samples_dir=samples_dir,
       dtype=training_dtype,
+      device=device,
     )
     for epoch in range(epochs):
       train(epoch, dataset)

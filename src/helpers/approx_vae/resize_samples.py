@@ -2,10 +2,11 @@ from cv2 import Mat, cvtColor
 import cv2
 from os.path import join
 from torch import load, save, from_numpy, stack, IntTensor
-from torchvision.io import write_png
 from .get_file_names import GetFileNames
 from typing import Tuple, List
 import torch
+
+debug_resize=False
 
 # there's so few of these we may as well keep them all resident in memory
 def get_resized_samples(
@@ -15,6 +16,7 @@ def get_resized_samples(
   device: torch.device = torch.device('cpu')
 ) -> IntTensor:
   filename_stem = 'resized_samples'
+
   resized_path_png = join(out_dir, f'{filename_stem}.png')
   resized_path_pt = join(out_dir, f'{filename_stem}.pt')
   try:
@@ -37,5 +39,7 @@ def get_resized_samples(
     tensors: List[IntTensor] = [from_numpy(cvtColor(resized, cv2.COLOR_BGR2RGB)) for resized in resizeds]
     tensor: IntTensor = stack(tensors)
     save(tensor, resized_path_pt)
-    write_png(tensor.permute(3, 0, 1, 2).flatten(1, end_dim=2), resized_path_png)
+    if debug_resize:
+      from torchvision.io import write_png
+      write_png(tensor.permute(3, 0, 1, 2).flatten(1, end_dim=2), resized_path_png)
     return tensor.to(device)
