@@ -7,7 +7,7 @@ from helpers.cumsum_mps_fix import reassuring_message as reassuring_message_2
 from helpers.device import DeviceLiteral, get_device_type
 from helpers.diffusers_denoiser import DiffusersSDDenoiser, DiffusersSD2Denoiser
 from helpers.batch_denoiser import Denoiser, BatchDenoiserFactory
-from helpers.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents, make_approx_latents_to_rgb, make_approx_rgb_to_latents, make_real_latents_to_rgb, make_real_rgb_to_latents
+from helpers.approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents, make_approx_latents_to_rgb, make_approx_rgb_to_latents, make_real_latents_to_rgb, make_real_rgb_to_latents
 from helpers.encode_img import EncodeImg, make_encode_img
 from helpers.file_naming import get_sample_stem
 from helpers.inference_spec.latent_maker_img_encode_strategy import ImgEncodeLatentMaker
@@ -38,8 +38,10 @@ from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils
 from helpers.approx_vae.decoder_ckpt import DecoderCkpt
 from helpers.approx_vae.encoder_ckpt import EncoderCkpt
-from helpers.approx_vae.decoder import Decoder, get_approx_decoder
-from helpers.approx_vae.encoder import Encoder, get_approx_encoder
+from helpers.approx_vae.decoder import Decoder
+from helpers.approx_vae.encoder import Encoder
+from helpers.approx_vae.get_approx_decoder import get_approx_decoder
+from helpers.approx_vae.get_approx_encoder import get_approx_encoder
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds, get_approx_decoder_ckpt, get_approx_encoder_ckpt

@@ -4,15 +4,12 @@ from typing import List, Callable
 from typing_extensions import TypeAlias
 from PIL import Image
 from diffusers.models import AutoencoderKL
-from .approx_decoder import Decoder
+from .approx_vae.decoder import Decoder
+from .approx_vae.int_info import int8_half_range
 import torch
 
 LatentsToBCHW: TypeAlias = Callable[[Tensor], Tensor]
 LatentsToPils: TypeAlias = Callable[[Tensor], List[Image.Image]]
-
-int8_iinfo = torch.iinfo(torch.int8)
-int8_range = int8_iinfo.max-int8_iinfo.min
-int8_half_range = int8_range / 2
 
 @no_grad()
 def approx_latents_to_pils(decoder: Decoder, latents: Tensor) -> Tensor:

@@ -1,8 +1,8 @@
 from torch import FloatTensor, no_grad
-from torchvision.transforms.functional import resize, InterpolationMode
+# from torchvision.transforms.functional import resize, InterpolationMode
 from typing import Optional, Protocol
-from .approx_decoder import Decoder
-from .approx_encoder import Encoder
+from .decoder import Decoder
+from .encoder import Encoder
 from functools import partial
 from diffusers.models.autoencoder_kl import AutoencoderKLOutput
 from diffusers.models import AutoencoderKL
@@ -57,6 +57,8 @@ def real_latents_to_rgb(vae: AutoencoderKL, latents: FloatTensor) -> FloatTensor
   dtype, device = latents.dtype, latents.device
   latents: FloatTensor = latents / (vae.config.scaling_factor if 'scaling_factor' in vae.config else 0.18215)
   decoded: FloatTensor = vae.decode(latents.to(dtype=vae.dtype, device=vae.device)).sample.to(dtype=dtype, device=device)
+  # originally I thought it'd be bad to return 8x bigger RGB, but encoder is expecting the same thing so it works out.
+  # here's how to downsample though (in case you want to pair with an approx decoder that doesn't scale the image for you)
   # _, _, height, width = decoded.shape
   # vae_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1)
   # scaled_height = height//vae_scale_factor
