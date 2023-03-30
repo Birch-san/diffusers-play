@@ -7,11 +7,12 @@ import torch
 from os import listdir, makedirs
 from os.path import join, exists
 from torch import Tensor, IntTensor, FloatTensor, inference_mode, sub, zeros, from_numpy, load, save, stack
-from torch.nn import Linear, SiLU, ModuleList, MSELoss, L1Loss, Module
+from torch.nn import MSELoss, L1Loss
 from torch.optim import AdamW
 from torchvision.io import write_png
 from typing import List, NamedTuple, Callable, Tuple
 from helpers.device import get_device_type, DeviceLiteral
+from helpers.approx_vae.encoder import Encoder
 
 int8_iinfo = torch.iinfo(torch.int8)
 int8_range = int8_iinfo.max-int8_iinfo.min
@@ -21,6 +22,7 @@ device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
 model_shortname = 'sd1.5'
+repo_root='..'
 assets_dir = f'out_learn_{model_shortname}'
 samples_dir=join(assets_dir, 'samples')
 processed_train_data_dir=join(assets_dir, 'processed_train_data')
@@ -28,33 +30,11 @@ processed_test_data_dir=join(assets_dir, 'processed_test_data')
 latents_dir=join(assets_dir, 'pt')
 test_latents_dir=join(assets_dir, 'test_pt')
 test_samples_dir=join(assets_dir, 'test_png')
-weights_dir=join(assets_dir, 'weights')
-for path_ in [weights_dir, processed_train_data_dir, processed_test_data_dir]:
+weights_dir=join(repo_root, 'approx_vae')
+for path_ in [processed_train_data_dir, processed_test_data_dir]:
   makedirs(path_, exist_ok=True)
 
-weights_path = join(weights_dir, f'approx_encoder3_{model_shortname}.pt')
-
-class Encoder3(Module):
-  in_proj: Linear
-  hidden_layers: ModuleList
-  out_proj: Linear
-  def __init__(self, hidden_layer_count: int, inner_dim: int) -> None:
-    super().__init__()
-    self.in_proj = Linear(3, inner_dim)
-    make_nonlin = SiLU
-    self.nonlin = make_nonlin()
-    self.hidden_layers = ModuleList([
-      layer for layer in (Linear(inner_dim, inner_dim), make_nonlin()) for _ in range(hidden_layer_count)
-    ])
-    self.out_proj = Linear(inner_dim, 4)
-  
-  def forward(self, sample: Tensor) -> Tensor:
-    sample: Tensor = self.in_proj(sample)
-    sample: Tensor = self.nonlin(sample)
-    for layer in self.hidden_layers:
-      sample: Tensor = layer.forward(sample)
-    sample: Tensor = self.out_proj(sample)
-    return sample
+weights_path = join(weights_dir, f'encoder_{model_shortname}.pt')
 
 class Mode(Enum):
   Train = auto()
@@ -63,7 +43,7 @@ mode = Mode.Train
 test_after_train=True
 resume_training=False
 
-model = Encoder3(hidden_layer_count=1, inner_dim=12)
+model = Encoder()
 if exists(weights_path) and resume_training or mode is not Mode.Train:
   model.load_state_dict(load(weights_path, weights_only=True))
 model = model.to(device)
