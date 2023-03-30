@@ -35,7 +35,8 @@ from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
-from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils
+from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw
+from helpers.approx_vae.latents_to_pils import make_approx_latents_to_pils
 from helpers.approx_vae.decoder_ckpt import DecoderCkpt
 from helpers.approx_vae.encoder_ckpt import EncoderCkpt
 from helpers.approx_vae.decoder import Decoder
