@@ -5,7 +5,7 @@ import torch
 from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
-from .dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
+from .approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -83,6 +83,8 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   cond_ex_uncond_count: LongTensor = field(init=False)
   cfg_scaled_cond_weights: FloatTensor = field(init=False)
   mimic_scaled_cond_weights: Optional[FloatTensor] = field(init=False)
+  cfg_until_sigma: Optional[float]
+  dynthresh_until_sigma: Optional[float]
 
   def __post_init__(self):
     super().__post_init__()
@@ -177,8 +179,9 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
-    disable_dynthresh = sigma[0].item()<1.1
-    disable_cfg = False # sigma[0].item()<1.1
+    sigma_: float = sigma[0].item()
+    disable_dynthresh = self.dynthresh_until_sigma is not None and sigma_ < self.dynthresh_until_sigma
+    disable_cfg = self.cfg_until_sigma is not None and sigma_ < self.cfg_until_sigma
     if disable_cfg:
       cross_attention_conds = self.cross_attention_conds.index_select(0, self.cond_ixs)
       cross_attention_mask = self.cross_attention_mask.index_select(0, self.cond_ixs)
@@ -245,7 +248,9 @@ class BatchDenoiserFactory():
     center_denoise_outputs: Optional[BoolTensor],
     dynthresh_latent_decoder: Optional[LatentsToRGB],
     dynthresh_latent_encoder: Optional[RGBToLatents],
-    pixel_space_dynthresh: bool = True,
+    pixel_space_dynthresh: bool = False,
+    cfg_until_sigma: Optional[float] = None,
+    dynthresh_until_sigma: Optional[float] = None,
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -271,4 +276,6 @@ class BatchDenoiserFactory():
       dynthresh_latent_decoder=dynthresh_latent_decoder,
       dynthresh_latent_encoder=dynthresh_latent_encoder,
       pixel_space_dynthresh=pixel_space_dynthresh,
+      cfg_until_sigma=cfg_until_sigma,
+      dynthresh_until_sigma=dynthresh_until_sigma,
     )

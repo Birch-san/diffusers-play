@@ -15,6 +15,8 @@ class CfgState:
   # torch.quantile only accepts a 1D tensor of quantiles, so we can't easily vary quantile per-sample
   dynthresh_percentile: Optional[float]
   pixel_space_dynthresh: bool
+  cfg_until_sigma: Optional[float]
+  dynthresh_until_sigma: Optional[float]
 
 @dataclass
 class CondInterp:
@@ -55,6 +57,10 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
     spec.cond_spec.cfg is None or (
       spec.cond_spec.cfg.pixel_space_dynthresh == acc.cfg.pixel_space_dynthresh
     )
+  ) and (
+    spec.cond_spec.cfg is None or (
+      spec.cond_spec.cfg.cfg_until_sigma == acc.cfg.cfg_until_sigma
+    )
   )
 
   if can_merge:
@@ -76,6 +82,8 @@ def make_execution_plan(acc: Optional[ExecutionPlan], spec: SampleSpec) -> PlanM
       mimic_scales = [],
       dynthresh_percentile = spec.cond_spec.cfg.dynthresh_percentile,
       pixel_space_dynthresh = spec.cond_spec.cfg.pixel_space_dynthresh,
+      cfg_until_sigma = spec.cond_spec.cfg.cfg_until_sigma,
+      dynthresh_until_sigma = spec.cond_spec.cfg.dynthresh_until_sigma,
     )
     cond_interps: List[List[Optional[CondInterp]]] = []
     center_denoise_outputs: List[bool] = []

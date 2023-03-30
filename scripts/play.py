@@ -367,7 +367,14 @@ uncond_prompt=BasicPrompt(text='')
 # )
 
 conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
-  cfg=CFG(scale=cfg_scale, uncond_prompt=uncond_prompt, dynthresh_percentile=dynthresh_percentile, pixel_space_dynthresh=True),
+  cfg=CFG(
+    scale=cfg_scale,
+    uncond_prompt=uncond_prompt,
+    dynthresh_percentile=dynthresh_percentile,
+    pixel_space_dynthresh=True,
+    cfg_until_sigma=1.1,
+    dynthresh_until_sigma=1.1,
+  ),
   prompt=BasicPrompt(
     text=prompt,
   ),
@@ -434,6 +441,8 @@ with no_grad():
       mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile = None
       pixel_space_dynthresh = True
+      cfg_until_sigma = None
+      dynthresh_until_sigma = None
     else:
       first_cond_ix_per_prompt: LongTensor = conds_per_prompt_tensor.roll(1).index_put(
         indices=[torch.zeros([1], dtype=torch.long, device=device)],
@@ -449,7 +458,9 @@ with no_grad():
         mimic_scales = None
         mimic_scales_arr = [None]*batch_sample_count
       dynthresh_percentile: Optional[float] = plan.cfg.dynthresh_percentile
-      pixel_space_dynthresh = plan.cfg.pixel_space_dynthresh
+      pixel_space_dynthresh: bool = plan.cfg.pixel_space_dynthresh
+      cfg_until_sigma: Optional[float] = plan.cfg.cfg_until_sigma
+      dynthresh_until_sigma: Optional[float] = plan.cfg.dynthresh_until_sigma
     
     cond_weights: FloatTensor = tensor(plan.cond_weights, dtype=sampling_dtype, device=device)
 
@@ -528,6 +539,8 @@ with no_grad():
       dynthresh_latent_decoder=dynthresh_decoder,
       dynthresh_latent_encoder=dynthresh_encoder,
       pixel_space_dynthresh=pixel_space_dynthresh,
+      cfg_until_sigma=cfg_until_sigma,
+      dynthresh_until_sigma=dynthresh_until_sigma,
     )
     del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales, center_denoise_outputs
 

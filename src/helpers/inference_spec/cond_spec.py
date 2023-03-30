@@ -44,6 +44,8 @@ class CFG:
   dynthresh_percentile: Optional[float] = None
   center_denoise_output: bool = False
   pixel_space_dynthresh: bool = True
+  cfg_until_sigma: Optional[float] = None
+  dynthresh_until_sigma: Optional[float] = None
 
 @dataclass
 class WeightedPrompt:
