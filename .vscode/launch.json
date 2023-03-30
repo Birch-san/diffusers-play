@@ -80,10 +80,10 @@
       }
     },
     {
-      "name": "Python: Decode",
+      "name": "Python: Train approx decoder",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/decode.py",
+      "program": "${workspaceFolder}/scripts/train_approx_decoder.py",
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
@@ -92,10 +92,10 @@
       }
     },
     {
-      "name": "Python: Encode",
+      "name": "Python: Train approx encoder",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/scripts/encode.py",
+      "program": "${workspaceFolder}/scripts/train_approx_encoder.py",
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
