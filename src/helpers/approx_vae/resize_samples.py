@@ -32,7 +32,7 @@ def get_resized_samples(
     vae_scale_factor = 8
     scaled_height = height//vae_scale_factor
     scaled_width = width//vae_scale_factor
-    dsize: Tuple[int, int] = (scaled_height, scaled_width)
+    dsize: Tuple[int, int] = (scaled_width, scaled_height)
     resizeds: List[Mat] = [cv2.resize(mat, dsize, interpolation=cv2.INTER_AREA) for mat in mats]
     for img, filename in zip(resizeds, sample_filenames):
       cv2.imwrite(join(out_dir, filename), img)
