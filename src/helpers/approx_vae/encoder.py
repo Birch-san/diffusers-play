@@ -1,5 +1,9 @@
 from torch.nn import Module, ModuleList, Linear, SiLU
-from torch import Tensor
+from torch import Tensor, load
+import torch
+from os.path import join, dirname
+from typing import OrderedDict
+from .encoder_ckpt import EncoderCkpt, approx_encoder_ckpt_filenames
 
 class Encoder(Module):
   in_proj: Linear
@@ -22,3 +26,13 @@ class Encoder(Module):
       sample: Tensor = layer.forward(sample)
     sample: Tensor = self.out_proj(sample)
     return sample
+
+def get_approx_encoder(
+  encoder_ckpt: EncoderCkpt,
+  device: torch.device = torch.device('cpu'),
+) -> Encoder:
+  approx_encoder_ckpt: str = join(dirname(__file__), approx_encoder_ckpt_filenames[encoder_ckpt])
+  approx_state: OrderedDict[str, Tensor] = load(approx_encoder_ckpt, map_location=device, weights_only=True)
+  approx_encoder = Encoder()
+  approx_encoder.load_state_dict(approx_state)
+  return approx_encoder.eval().to(device)

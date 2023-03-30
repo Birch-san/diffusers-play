@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from .embed_text import ClipCheckpoint
-from .approx_decoder_ckpt import DecoderCkpt
-from .approx_encoder_ckpt import EncoderCkpt
+from .approx_vae.decoder_ckpt import DecoderCkpt
+from .approx_vae.encoder_ckpt import EncoderCkpt
 import torch
 from typing import Dict
 

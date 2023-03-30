@@ -36,10 +36,10 @@ from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
 from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_to_pils, make_latents_to_bchw, make_approx_latents_to_pils
-from helpers.approx_decoder import Decoder, get_approx_decoder
-from helpers.approx_decoder_ckpt import DecoderCkpt
-from helpers.approx_encoder import Encoder, get_approx_encoder
-from helpers.approx_encoder_ckpt import EncoderCkpt
+from helpers.approx_vae.decoder_ckpt import DecoderCkpt
+from helpers.approx_vae.encoder_ckpt import EncoderCkpt
+from helpers.approx_vae.decoder import Decoder, get_approx_decoder
+from helpers.approx_vae.encoder import Encoder, get_approx_encoder
 from helpers.embed_text_types import Embed, EmbeddingAndMask
 from helpers.embed_text import ClipCheckpoint, ClipImplementation, get_embedder
 from helpers.model_db import get_model_needs, ModelNeeds, get_approx_decoder_ckpt, get_approx_encoder_ckpt
