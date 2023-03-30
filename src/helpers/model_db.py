@@ -62,6 +62,12 @@ def get_approx_decoder_ckpt(model_name: str, wd_prefer_1_3: bool) -> DecoderCkpt
 
 def get_approx_encoder_ckpt(model_name: str, wd_prefer_1_3: bool) -> EncoderCkpt:
   match model_name:
+    case 'CompVis/stable-diffusion-v1-4':
+      return EncoderCkpt.SD1_4
+    case 'hakurei/waifu-diffusion':
+      return EncoderCkpt.WD1_3 if wd_prefer_1_3 else EncoderCkpt.WD1_4
+    case 'waifu-diffusion/wd-1-5-beta2':
+      return EncoderCkpt.WD1_5
     case 'runwayml/stable-diffusion-v1-5' | _:
       return EncoderCkpt.SD1_5
 
