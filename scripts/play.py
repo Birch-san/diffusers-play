@@ -173,12 +173,15 @@ vae_revision = revision
 # vae_dtype: torch.dtype = torch.float32
 # vae_revision=None
 
+vae_page_vram = False
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
   'hakurei/waifu-diffusion' if model_name == 'waifu-diffusion/wd-1-5-beta3' else model_name,
   subfolder='vae',
   revision=vae_revision,
   torch_dtype=vae_dtype,
-).to(device).eval()
+).eval()
+if not vae_page_vram:
+  vae.to(device)
 latents_to_bchw: LatentsToBCHW = make_latents_to_bchw(vae)
 latents_to_pils: LatentsToPils = make_latents_to_pils(latents_to_bchw)
 encode_img: EncodeImg = make_encode_img(vae)
@@ -596,6 +599,10 @@ with no_grad():
     else:
       callback = None
 
+    if vae_page_vram:
+      # this probably breaks log_intermediates if you're decoding via VAE
+      vae.to(torch.device('cpu'))
+
     tic = time.perf_counter()
     latents: Tensor = sample_dpmpp_2m(
       denoiser,
@@ -612,6 +619,9 @@ with no_grad():
       for stem, sample_latents in zip(sample_stems, latents):
         torch.save(sample_latents, os.path.join(latents_path, f"{stem}.pt"))
 
+    if vae_page_vram:
+      vae.to(device)
+    
     pil_images: List[Image.Image] = latents_to_pils(latents)
     del latents
 
