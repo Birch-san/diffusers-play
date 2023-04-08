@@ -90,6 +90,10 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   # this is only useful if you're on a diffusers branch that makes use of that property
   # (e.g. saving out intermediate tensors, including the sigma in the filename)
   set_sigma_property: bool = field(init=False)
+  # if you're really at your memory limit (e.g. denoising large images without mem-efficient attn)
+  # you can halve your batch size by separating your denoising of uncond and cond into different batches
+  # this is only likely to be necessary if you're doing heavy customization of diffusers' attention algorithm (e.g. rewriting softmax)
+  denoise_unconds_separately: bool = field(init=False)
   cfg_until_sigma: Optional[float]
   dynthresh_until_sigma: Optional[float]
 
@@ -212,29 +216,58 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     del noised_latents
     sigma_in: FloatTensor = sigma.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del sigma
-    denoised_latents: FloatTensor = self.denoiser.forward(
-      input=noised_latents_in,
-      sigma=sigma_in,
-      encoder_hidden_states=cross_attention_conds,
-      cross_attention_mask=cross_attention_mask,
-    )
-    if self.center_denoise_outputs is not None:
-      denoised_latents = where(
-        center_denoise_outputs,
-        denoised_latents-denoised_latents.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(denoised_latents.shape),
-        denoised_latents,
+    # if you're really pinched for memory (e.g. attention experiments): we can split the batch
+    # (we assume you already got the batch size down to 1, otherwise that'd be the simpler thing to tune)
+    if self.denoise_unconds_separately and not disable_cfg:
+      unconds: FloatTensor = self.denoiser.forward(
+        input=noised_latents_in.index_select(0, self.uncond_ixs),
+        sigma=sigma_in.index_select(0, self.uncond_ixs),
+        encoder_hidden_states=cross_attention_conds.index_select(0, self.uncond_ixs),
+        cross_attention_mask=cross_attention_mask.index_select(0, self.uncond_ixs),
       )
-    del noised_latents_in, sigma_in
-    if disable_cfg:
-      return denoised_latents
-    unconds: FloatTensor = denoised_latents.index_select(0, self.uncond_ixs)
-    conds: FloatTensor = denoised_latents.index_select(0, self.cond_ixs)
-    del denoised_latents
+      conds: FloatTensor = self.denoiser.forward(
+        input=noised_latents_in.index_select(0, self.cond_ixs),
+        sigma=sigma_in.index_select(0, self.cond_ixs),
+        encoder_hidden_states=cross_attention_conds.index_select(0, self.cond_ixs),
+        cross_attention_mask=cross_attention_mask.index_select(0, self.cond_ixs),
+      )
+      del noised_latents_in, sigma_in
+      if self.center_denoise_outputs is not None:
+        unconds = where(
+          center_denoise_outputs.index_select(0, self.uncond_ixs),
+          unconds-unconds.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(unconds.shape),
+          unconds,
+        )
+        conds = where(
+          center_denoise_outputs.index_select(0, self.cond_ixs),
+          conds-conds.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(conds.shape),
+          conds,
+        )
+    else:
+      denoised_latents: FloatTensor = self.denoiser.forward(
+        input=noised_latents_in,
+        sigma=sigma_in,
+        encoder_hidden_states=cross_attention_conds,
+        cross_attention_mask=cross_attention_mask,
+      )
+      if self.center_denoise_outputs is not None:
+        denoised_latents = where(
+          center_denoise_outputs,
+          denoised_latents-denoised_latents.mean(dim=(-2,-1)).unsqueeze(-1).unsqueeze(-1).expand(denoised_latents.shape),
+          denoised_latents,
+        )
+      del noised_latents_in, sigma_in
+      if disable_cfg:
+        return denoised_latents
+      unconds: FloatTensor = denoised_latents.index_select(0, self.uncond_ixs)
+      conds: FloatTensor = denoised_latents.index_select(0, self.cond_ixs)
+      del denoised_latents
     unconds_r: FloatTensor = unconds.repeat_interleave(self.conds_ex_uncond_per_prompt, dim=0, output_size=self.cond_ex_uncond_count)
     diffs: FloatTensor = conds-unconds_r
     del conds, unconds_r
     unconds_backup: Optional[FloatTensor] = None if self.mimic_scaled_cond_weights is None else unconds.detach().clone()
     cfg_denoised: FloatTensor = self._compute_for_scale(unconds, diffs, self.cfg_scaled_cond_weights)
+    del unconds
     if self.pixel_space_dynthresh and self.dynthresh_percentile is not None and not disable_dynthresh:
       cfg_denoised = self._pixel_space_dynthresh(cfg_denoised)
     if self.mimic_scaled_cond_weights is None:
