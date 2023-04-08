@@ -89,7 +89,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   # when True: assigns `sigma: float` property to every Attention layer in Unet
   # this is only useful if you're on a diffusers branch that makes use of that property
   # (e.g. saving out intermediate tensors, including the sigma in the filename)
-  set_sigma_property: bool = field(init=False)
+  set_sigma_property: bool = field(init=False, default=False)
   # if you're really at your memory limit (e.g. denoising large images without mem-efficient attn)
   # you can halve your batch size by separating your denoising of uncond and cond into different batches
   # this is only likely to be necessary if you're doing heavy customization of diffusers' attention algorithm (e.g. rewriting softmax)
