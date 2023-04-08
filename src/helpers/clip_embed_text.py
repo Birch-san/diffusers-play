@@ -38,7 +38,10 @@ def get_embedder(
   text_encoder: CLIPTextModel,
   subtract_hidden_state_layers = 0,
   max_context_segments = 1,
+  page_vram = False
 ) -> Embed:
+  # TODO: paging the text encoder shouldn't really be our responsibility; embed_text.py should expose access to CLIPTextModel
+  device=text_encoder.device
   def embed(prompts: Prompts) -> EmbeddingAndMask:
     max_len_incl_special=tokenizer.model_max_length
     max_len_excl_special=max_len_incl_special-2
@@ -54,7 +57,6 @@ def get_embedder(
     # you can see how the words get split into tokens like so:
     # [tokenizer.convert_ids_to_tokens([tokenizer.bos_token_id, *tokens.input_ids[ix][:tokens.length[ix]], tokenizer.eos_token_id]) for ix in range(len(tokens.input_ids))]
     # tokenizer.convert_ids_to_tokens(tokenizer('hey').input_ids)
-    device=text_encoder.device
     text_input_ids: LongTensor = tokens.input_ids.to(device)
     prompt_count = text_input_ids.size(0)
     token_lengths: LongTensor = tokens.length.to(device)
@@ -96,11 +98,15 @@ def get_embedder(
       values=eos_t,
     ).flatten(end_dim=1)
     with no_grad():
+      if page_vram:
+        text_encoder.to(device)
       encoder_outputs: BaseModelOutputWithPooling = text_encoder.forward(
         special,
         output_hidden_states=subtract_hidden_state_layers != 0,
         return_dict=True,
       )
+      if page_vram:
+        text_encoder.to(torch.device('cpu'))
       text_embeddings: FloatTensor = encoder_outputs.last_hidden_state if subtract_hidden_state_layers == 0 else (
         text_encoder.text_model.final_layer_norm.forward(encoder_outputs.hidden_states[-1 - subtract_hidden_state_layers])
       )
