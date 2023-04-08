@@ -273,6 +273,7 @@ match(model_name):
     height = width
 
 filename_qualifier=''
+latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
