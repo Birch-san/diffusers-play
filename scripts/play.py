@@ -269,7 +269,7 @@ match(model_name):
     width = 768 if is_768 else 512
     height = width
 
-latent_scale_factor = 8
+filename_qualifier=''
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
@@ -385,6 +385,7 @@ conditions: Iterable[ConditionSpec] = cycle(SingleCondition(
     # cfg_until_sigma=1.1,
     # dynthresh_until_sigma=1.1,
   ),
+  filename_qualifier=filename_qualifier,
   prompt=BasicPrompt(
     text=prompt,
   ),
@@ -486,6 +487,7 @@ with no_grad():
     else:
       center_denoise_outputs = None
       center_configs: List[None] = [None]*batch_sample_count
+    filename_qualifiers: List[Optional[str]] = [spec.cond_spec.filename_qualifier for spec in specs]
     del specs
 
     cond_interps_flat: List[Optional[CondInterp]] = [cond_interp for cond_interps in plan.cond_interps for cond_interp in cond_interps]
@@ -577,11 +579,13 @@ with no_grad():
       center_denoise_output=center,
       half=half,
       model_name=model_name,
-    ) for ix, (seed, cfg, mimic, center) in enumerate(zip(
+      filename_qualifier=filename_qualifier,
+    ) for ix, (seed, cfg, mimic, center, filename_qualifier) in enumerate(zip(
       seeds,
       cfgs,
       mimic_scales_arr,
       center_configs,
+      filename_qualifiers
     ))]
 
     if log_intermediates_enabled:

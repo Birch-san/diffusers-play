@@ -59,6 +59,7 @@ class ConditionProto(Protocol):
 @dataclass
 class ConditionSpec(ABC, ConditionProto):
   cfg: Optional[CFG]
+  filename_qualifier: Optional[str]
 
   @property
   def uncond_prompt_texts(self) -> List[str]:
