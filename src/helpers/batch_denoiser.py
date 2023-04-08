@@ -6,6 +6,9 @@ from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
 from .approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
+from .attention.set_sigma import make_set_sigma
+from .attention.tap_attn import TapAttn, tap_attn_to_tap_module
+from .tap.tap_module import TapModule
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -83,6 +86,10 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   cond_ex_uncond_count: LongTensor = field(init=False)
   cfg_scaled_cond_weights: FloatTensor = field(init=False)
   mimic_scaled_cond_weights: Optional[FloatTensor] = field(init=False)
+  # when True: assigns `sigma: float` property to every Attention layer in Unet
+  # this is only useful if you're on a diffusers branch that makes use of that property
+  # (e.g. saving out intermediate tensors, including the sigma in the filename)
+  set_sigma_property: bool = field(init=False)
   cfg_until_sigma: Optional[float]
   dynthresh_until_sigma: Optional[float]
 
@@ -180,6 +187,12 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     sigma: FloatTensor,
   ) -> FloatTensor:
     sigma_: float = sigma[0].item()
+
+    if self.set_sigma_property:
+      set_sigma: TapAttn = make_set_sigma(sigma_)
+      tap_module: TapModule = tap_attn_to_tap_module(set_sigma)
+      self.denoiser.inner_model.apply(tap_module)
+
     disable_dynthresh = self.dynthresh_until_sigma is not None and sigma_ < self.dynthresh_until_sigma
     disable_cfg = self.cfg_until_sigma is not None and sigma_ < self.cfg_until_sigma
     if disable_cfg:
