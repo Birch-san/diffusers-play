@@ -30,6 +30,7 @@ from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sa
 from helpers.attention.mode import AttentionMode
 from helpers.attention.multi_head_attention.to_mha import to_mha
 from helpers.attention.set_chunked_attn import make_set_chunked_attn
+from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.tap.tap_module import TapModule
@@ -272,7 +273,15 @@ match(model_name):
     width = 768 if is_768 else 512
     height = width
 
+self_attn_key_length_factor=(height*width)/(trained_height*trained_width)
 filename_qualifier=''
+
+set_key_length_factor: TapAttn = make_set_key_length_factor(
+  self_attn_key_length_factor=self_attn_key_length_factor,
+)
+tap_module: TapModule = tap_attn_to_tap_module(set_key_length_factor)
+unet.apply(tap_module)
+
 latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
