@@ -93,7 +93,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   # if you're really at your memory limit (e.g. denoising large images without mem-efficient attn)
   # you can halve your batch size by separating your denoising of uncond and cond into different batches
   # this is only likely to be necessary if you're doing heavy customization of diffusers' attention algorithm (e.g. rewriting softmax)
-  denoise_unconds_separately: bool = field(init=False)
+  denoise_unconds_separately: bool = field(init=False, default=False)
   cfg_until_sigma: Optional[float]
   dynthresh_until_sigma: Optional[float]
 
