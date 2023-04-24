@@ -25,12 +25,16 @@ assets_dir = f'out_learn_{model_shortname}'
 samples_dir=join(assets_dir, 'samples')
 processed_train_data_dir=join(assets_dir, 'processed_train_data')
 processed_test_data_dir=join(assets_dir, 'processed_test_data')
+processed_test_visualization_dir=join(processed_test_data_dir, 'latent_vis')
 latents_dir=join(assets_dir, 'pt')
 test_latents_dir=join(assets_dir, 'test_pt')
 test_samples_dir=join(assets_dir, 'test_png')
+predictions_root_dir=join(assets_dir, 'test_pred_encoder')
+predictions_latents_dir=join(predictions_root_dir, 'pt')
+predictions_samples_dir=join(predictions_root_dir, 'png')
 science_dir=join(assets_dir, 'science')
 weights_dir=join(repo_root, 'approx_vae')
-for path_ in [processed_train_data_dir, processed_test_data_dir, science_dir]:
+for path_ in [processed_train_data_dir, processed_test_data_dir, processed_test_visualization_dir, predictions_root_dir, predictions_latents_dir, predictions_samples_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
 weights_path = join(weights_dir, f'encoder_{model_shortname}.pt')
@@ -69,7 +73,7 @@ def train(epoch: int, dataset: Dataset):
 
 @inference_mode(True)
 def test():
-  get_sample_filenames: GetFileNames = lambda: fnmatch.filter(listdir(test_samples_dir), f"*.png")
+  get_sample_filenames: GetFileNames = lambda: sorted(fnmatch.filter(listdir(test_samples_dir), f"*.png"), key=lambda fname: int(fname.split('.', 1)[0]))
   get_latent_filenames: GetFileNames = lambda: [sample_path.replace('png', 'pt') for sample_path in get_sample_filenames()]
 
   samples: IntTensor = get_resized_samples(
@@ -90,11 +94,26 @@ def test():
   )
   true_latents = true_latents.to(training_dtype)
 
+  # save visualizations of true latents
+  true_norm: FloatTensor = normalize_latents(true_latents)
+  true_rgb: IntTensor = norm_latents_to_rgb(true_norm)
+  true_collages: IntTensor = collage_2by2(true_rgb, keepdim=False).cpu()
+  for filename, collage in zip(get_latent_filenames(), true_collages.split(1)):
+    write_png(collage, join(processed_test_visualization_dir, filename.replace('.pt', '.png')))
+
   model.eval() # might be redundant due to inference mode but whatever
 
   predicted_latents: FloatTensor = model.forward(samples)
   # back to channels-first for comparison with true latents
   predicted_latents = predicted_latents.permute(0, 3, 1, 2)
+
+  # save latent predictions, and visualizations thereof
+  pred_norm: FloatTensor = normalize_latents(predicted_latents)
+  pred_rgb: IntTensor = norm_latents_to_rgb(pred_norm)
+  pred_collages: IntTensor = collage_2by2(pred_rgb, keepdim=False).cpu()
+  for filename, prediction, collage in zip(get_latent_filenames(), predicted_latents.split(1), pred_collages.split(1)):
+    save(prediction, join(predictions_latents_dir, filename))
+    write_png(collage, join(predictions_samples_dir, filename.replace('.pt', '.png')))
   
   loss_components = loss_fn(predicted_latents, true_latents)
   loss_desc: str = describe_loss(loss_components)

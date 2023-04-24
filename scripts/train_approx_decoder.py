@@ -71,7 +71,7 @@ def train(epoch: int, dataset: Dataset):
 
 @inference_mode(True)
 def test():
-  get_latent_filenames: GetFileNames = lambda: fnmatch.filter(listdir(test_latents_dir), f"*.pt")
+  get_latent_filenames: GetFileNames = lambda: sorted(fnmatch.filter(listdir(test_latents_dir), f"*.pt"), key=lambda fname: int(fname.split('.', 1)[0]))
   get_sample_filenames: GetFileNames = lambda: [latent_path.replace('pt', 'png') for latent_path in get_latent_filenames()]
 
   latents: FloatTensor = get_latents(
