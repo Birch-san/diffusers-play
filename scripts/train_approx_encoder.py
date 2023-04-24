@@ -5,6 +5,7 @@ from os import listdir, makedirs
 from os.path import join, exists, dirname
 from torch import IntTensor, FloatTensor, inference_mode, load, save
 from torch.optim import AdamW
+from torchvision.io import write_png
 from helpers.device import get_device_type, DeviceLiteral
 from helpers.approx_vae.encoder import Encoder
 from helpers.approx_vae.dataset import get_data, Dataset
@@ -13,6 +14,7 @@ from helpers.approx_vae.get_latents import get_latents
 from helpers.approx_vae.resize_samples import get_resized_samples
 from helpers.approx_vae.int_info import int8_half_range
 from helpers.approx_vae.loss import loss_fn, describe_loss, LossComponents
+from helpers.approx_vae.visualize_latents import normalize_latents, norm_latents_to_rgb, collage_2by2
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
@@ -26,8 +28,9 @@ processed_test_data_dir=join(assets_dir, 'processed_test_data')
 latents_dir=join(assets_dir, 'pt')
 test_latents_dir=join(assets_dir, 'test_pt')
 test_samples_dir=join(assets_dir, 'test_png')
+science_dir=join(assets_dir, 'science')
 weights_dir=join(repo_root, 'approx_vae')
-for path_ in [processed_train_data_dir, processed_test_data_dir]:
+for path_ in [processed_train_data_dir, processed_test_data_dir, science_dir]:
   makedirs(path_, exist_ok=True)
 
 weights_path = join(weights_dir, f'encoder_{model_shortname}.pt')
@@ -35,7 +38,7 @@ weights_path = join(weights_dir, f'encoder_{model_shortname}.pt')
 class Mode(Enum):
   Train = auto()
   Test = auto()
-mode = Mode.Train
+  Science = auto()
 test_after_train=True
 resume_training=False
 
@@ -114,3 +117,13 @@ match(mode):
       test()
   case Mode.Test:
     test()
+  case Mode.Science:
+    latent_filename = '00242.1222668698.cfg07.50.sd1.5.pt'
+    input_path = join(test_latents_dir, latent_filename)
+    latents: FloatTensor = load(input_path, map_location=device, weights_only=True)
+    norm: FloatTensor = normalize_latents(latents)
+    rgb: IntTensor = norm_latents_to_rgb(norm)
+    for ix, channel in enumerate(rgb.split(1)):
+      write_png(channel.cpu(), join(science_dir, latent_filename.replace('.pt', f'.{ix}.png')))
+    collage: IntTensor = collage_2by2(rgb, keepdim=True)
+    write_png(collage.cpu(), join(science_dir, latent_filename.replace('.pt', '.png')))

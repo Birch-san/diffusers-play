@@ -14,6 +14,7 @@ from helpers.approx_vae.get_latents import get_latents
 from helpers.approx_vae.resize_samples import get_resized_samples
 from helpers.approx_vae.int_info import int8_half_range
 from helpers.approx_vae.loss import loss_fn, describe_loss, LossComponents
+from helpers.approx_vae.visualize_latents import normalize_latents, norm_latents_to_rgb, collage_2by2
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
@@ -128,10 +129,12 @@ match(mode):
   case Mode.Test:
     test()
   case Mode.VisualizeLatents:
-    input_path = '00228.4209087706.cfg07.50.pt'
-    sample: Tensor = load(join(test_latents_dir, input_path), map_location=device, weights_only=True)
-    for ix, channel in enumerate(sample):
-      centered: Tensor = channel-(channel.max()+channel.min())/2
-      norm: Tensor = centered / centered.abs().max()
-      rescaled = (norm + 1)*(255/2)
-      write_png(rescaled.unsqueeze(0).to(dtype=torch.uint8).cpu(), join(science_dir, input_path.replace('pt', f'.{ix}.png')))
+    latent_filename = '00228.4209087706.cfg07.50.pt'
+    input_path = join(test_latents_dir, latent_filename)
+    latents: FloatTensor = load(input_path, map_location=device, weights_only=True)
+    norm: FloatTensor = normalize_latents(latents)
+    rgb: IntTensor = norm_latents_to_rgb(norm)
+    for ix, channel in enumerate(rgb.split(1)):
+      write_png(channel.cpu(), join(science_dir, latent_filename.replace('.pt', f'.{ix}.png')))
+    collage: IntTensor = collage_2by2(rgb, keepdim=True)
+    write_png(collage.cpu(), join(science_dir, latent_filename.replace('.pt', '.png')))
