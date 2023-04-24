@@ -3,6 +3,7 @@
 __pycache__/
 .DS_Store
 /src/ml-stable-diffusion/
+/src/coremltools/
 /init/
 /pt/
 /text-inversion-model*/
