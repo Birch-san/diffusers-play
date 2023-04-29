@@ -8,6 +8,7 @@ from torch.optim import AdamW
 from torchvision.io import write_png
 from helpers.device import get_device_type, DeviceLiteral
 from helpers.approx_vae.encoder import Encoder
+from helpers.approx_vae.encoder_wacky import WackyEncoder
 from helpers.approx_vae.dataset import get_data, Dataset
 from helpers.approx_vae.get_file_names import GetFileNames
 from helpers.approx_vae.get_latents import get_latents
@@ -19,9 +20,15 @@ from helpers.latents_to_pils import LatentsToPils, LatentsToBCHW, make_latents_t
 from diffusers.models import AutoencoderKL
 from typing import List
 from PIL import Image
+import signal
+import sys
+# import transformer_engine.pytorch as te
+# from transformer_engine.common.recipe import Format, DelayedScaling
 
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
+
+use_wacky=False
 
 model_shortname = 'sd1.5'
 repo_root=join(dirname(__file__), '..')
@@ -33,16 +40,17 @@ processed_test_visualization_dir=join(processed_test_data_dir, 'latent_vis')
 latents_dir=join(assets_dir, 'pt')
 test_latents_dir=join(assets_dir, 'test_pt')
 test_samples_dir=join(assets_dir, 'test_png')
-predictions_root_dir=join(assets_dir, 'test_pred_encoder')
+predictions_root_dir=join(assets_dir, 'test_pred_encoder_wacky' if use_wacky else 'test_pred_encoder')
 predictions_latents_dir=join(predictions_root_dir, 'pt')
 predictions_samples_dir=join(predictions_root_dir, 'png')
 science_dir=join(assets_dir, 'science')
-science2_dir=join(assets_dir, 'science2')
-weights_dir=join(repo_root, 'approx_vae')
-for path_ in [processed_train_data_dir, processed_test_data_dir, processed_test_visualization_dir, predictions_root_dir, predictions_latents_dir, predictions_samples_dir, science_dir, science2_dir]:
+science2_dir=join(assets_dir, 'science2_wacky' if use_wacky else 'science2')
+weights_dir=join(assets_dir, 'weights_approx_vae_wacky' if use_wacky else 'weights_approx_vae')
+for path_ in [processed_train_data_dir, processed_test_data_dir, processed_test_visualization_dir, predictions_root_dir, predictions_latents_dir, predictions_samples_dir, science_dir, science2_dir, weights_dir]:
   makedirs(path_, exist_ok=True)
 
 weights_path = join(weights_dir, f'encoder_{model_shortname}.pt')
+optim_path = join(weights_dir, f'encoder_{model_shortname}.optim.pt')
 
 class Mode(Enum):
   Train = auto()
@@ -53,12 +61,25 @@ mode = Mode.Train
 test_after_train=True
 resume_training=False
 
-model = Encoder()
-if exists(weights_path) and resume_training or mode is not Mode.Train:
-  model.load_state_dict(load(weights_path, weights_only=True))
-model = model.to(device)
+model = WackyEncoder() if use_wacky else Encoder()
 
-training_dtype = torch.float32
+conv_ingress=isinstance(model, WackyEncoder)
+
+# fp8_format = Format.HYBRID
+# fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo="max")
+# torch.manual_seed(1234)
+
+# training_dtype = torch.float32
+training_dtype = torch.bfloat16
+
+if resume_training or mode is not Mode.Train and exists(weights_path):
+  model.load_state_dict(load(weights_path, weights_only=True))
+model = model.to(device=device, dtype=training_dtype)
+
+if mode is Mode.Train:
+  optim = AdamW(model.parameters(), lr=5e-2)
+  if resume_training and exists(optim_path):
+    optim.load_state_dict(load(optim_path, weights_only=True))
 
 # epochs = 3000
 # epochs = 1000
@@ -68,6 +89,7 @@ optim = AdamW(model.parameters(), lr=5e-2)
 
 def train(epoch: int, dataset: Dataset):
   model.train()
+  # with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
   out: FloatTensor = model(dataset.samples)
   loss_components: LossComponents = loss_fn(out, dataset.latents)
   loss, _ = loss_components
@@ -110,9 +132,12 @@ def test():
 
   model.eval() # might be redundant due to inference mode but whatever
 
+  if conv_ingress:
+    samples = samples.permute(0, 3, 1, 2)
   predicted_latents: FloatTensor = model.forward(samples)
-  # back to channels-first for comparison with true latents
-  predicted_latents = predicted_latents.permute(0, 3, 1, 2)
+  if not conv_ingress:
+    # back to channels-first for comparison with true latents
+    predicted_latents = predicted_latents.permute(0, 3, 1, 2)
 
   # save latent predictions, and visualizations thereof
   pred_norm: FloatTensor = normalize_latents(predicted_latents)
@@ -135,10 +160,22 @@ match(mode):
       dtype=training_dtype,
       device=device,
     )
+    if conv_ingress:
+      dataset.samples = dataset.samples.permute(0, 3, 1, 2)
+      dataset.latents = dataset.latents.permute(0, 3, 1, 2)
+    
+    # def sigterm_handler(sig, frame):
+    #   print(f'received signal {sig}; saving model state')
+    #   save(model.state_dict(), weights_path)
+    #   sys.exit(0)
+
+    # signal.signal(signal.SIGTERM, sigterm_handler)
+    # signal.signal(signal.SIGINT, sigterm_handler)
     for epoch in range(epochs):
       train(epoch, dataset)
     del dataset
     save(model.state_dict(), weights_path)
+    save(optim.state_dict(), optim_path)
     if test_after_train:
       test()
   case Mode.Test:
@@ -167,11 +204,13 @@ match(mode):
 
     model.eval()
 
-    # channels-last
-    samples = samples.permute(0, 2, 3, 1)
+    if not conv_ingress:
+      # channels-last
+      samples = samples.permute(0, 2, 3, 1)
     predicted_latents: FloatTensor = model.forward(samples)
-    # back to channels-first for comparison with true latents
-    predicted_latents = predicted_latents.permute(0, 3, 1, 2)
+    if not conv_ingress:
+      # back to channels-first for comparison with true latents
+      predicted_latents = predicted_latents.permute(0, 3, 1, 2)
 
     true_girl: FloatTensor = load(join(test_latents_dir, '00234.3620773285.cfg07.50.sd1.5.pt'), map_location=device, weights_only=True)
 
