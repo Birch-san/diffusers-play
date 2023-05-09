@@ -86,10 +86,10 @@ device = torch.device(device_type)
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
   # 'CompVis/stable-diffusion-v1-4'
-  # 'hakurei/waifu-diffusion'
+  'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
-  'runwayml/stable-diffusion-v1-5'
+  # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
   # 'stabilityai/stable-diffusion-2-base'
@@ -130,7 +130,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
 ).to(device).eval()
 
-attn_mode = AttentionMode.Sliced
+attn_mode = AttentionMode.Standard
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Classic:
@@ -291,58 +291,58 @@ batch_latent_maker = BatchLatentMaker(
 #   1527468831,
 #   1659224482,
 # ]
-seeds_nominal: List[int] = [
-  86322125, # pretty stable
-  # 340323845,
-  # 436376137,
-  # 580263270,
-  # 715317074, # multimodal
-  # 830333947,
-  # 1157730004, # pretty stable # !
-  # 1289965640, # pretty stable, loses background, blows out without going uggo # !
-  # 1385218415,
-  # 1542102181, # multimodal
-  # 1797628106,
-  # 1903893103,
-  # 1935991193,
-  # 1976864330,
-  # 1979478207,
-  # 2106704619, # slightly multimodal
-  # 2573662367,
-  # 2637280979,
-  # 2704538591,
-  # 2886215181,
-  # 3013151840, # pretty stable
-  # 3069611639, # pretty stable
-  # 3395487508, # pretty stable
-  # 3426263955,
-  # 3760630765,
-  # # new candidates:
-  # 4272841740,
-  # 3505358989,
-  # 3725857796, # CFG artifacts early and many
-]
+# seeds_nominal: List[int] = [
+#   86322125, # pretty stable
+#   340323845,
+#   436376137,
+#   580263270,
+#   715317074, # multimodal
+#   830333947,
+#   1157730004, # pretty stable # !
+#   1289965640, # pretty stable, loses background, blows out without going uggo # !
+#   1385218415,
+#   1542102181, # multimodal
+#   1797628106,
+#   1903893103,
+#   1935991193,
+#   1976864330,
+#   1979478207,
+#   2106704619, # slightly multimodal
+#   2573662367,
+#   2637280979,
+#   2704538591,
+#   2886215181,
+#   3013151840, # pretty stable
+#   3069611639, # pretty stable
+#   3395487508, # pretty stable
+#   3426263955,
+#   3760630765,
+#   # new candidates:
+#   4272841740,
+#   3505358989,
+#   3725857796, # CFG artifacts early and many
+# ]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 15., 20., 30.,) #20.,)
-cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
+# cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
 
 # center_denoise_outputs_: Tuple[bool, bool] = (False, True,) #20.,)
-dynthresh_percentiles: List[Optional[float]] = [None, 0.995]
+# dynthresh_percentiles: List[Optional[float]] = [None, 0.995]
 # dynthresh_percentiles: List[Optional[float]] = [None]
 
 # max_batch_size = 8
 max_batch_size = 10
 # n_rand_seeds = max_batch_size
-n_rand_seeds = 1
+n_rand_seeds = 2
 # n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 prompt_texts: List[str] = [
-  'masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
-  'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
-  # 'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
-  # 'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
+  # 'masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
+  # 'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
+  'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
+  'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
   # 'kochiya sanae, carnelian, general content, one girl, solo, upper body, light smile, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, bare shoulders, blue skirt, snake hair ornament, blue eyes, white sleeves, wide hips, hand up, watercolor (medium), traditional media, painting (medium)',
   # 'patchouli knowledge, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, mob hat, striped, collar, purple dress, striped, wide hips, purple eyes, purple hair, watercolor (medium), traditional media, painting (medium)',
   # 'flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot',
@@ -358,8 +358,8 @@ seeds: Iterable[int] = chain(
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
-  (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
-  # (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
+  # (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
+  (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
 uncond_prompt=BasicPrompt(text='')
@@ -367,19 +367,20 @@ uncond_prompt=BasicPrompt(text='')
 #   text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
 # )
 
-conditions: Iterable[ConditionSpec] = cycle((SingleCondition(
+cfg_scale = 7.5
+conditions: Iterable[ConditionSpec] = cycle(SingleCondition(
   cfg=CFG(
     scale=cfg_scale,
     uncond_prompt=uncond_prompt,
-    dynthresh_percentile=dynthresh_percentile,
-    pixel_space_dynthresh=True,
-    cfg_until_sigma=1.1,
-    dynthresh_until_sigma=1.1,
+    # dynthresh_percentile=dynthresh_percentile,
+    # pixel_space_dynthresh=True,
+    # cfg_until_sigma=1.1,
+    # dynthresh_until_sigma=1.1,
   ),
   prompt=BasicPrompt(
     text=prompt,
   ),
-) for dynthresh_percentile in dynthresh_percentiles for prompt in prompt_texts for cfg_scale in cfg_scales_))
+) for prompt in prompt_texts) #for dynthresh_percentile in dynthresh_percentiles for prompt in prompt_texts for cfg_scale in cfg_scales_))
 
 sample_specs: Iterable[SampleSpec] = (SampleSpec(
   latent_spec=SeedSpec(seed),
