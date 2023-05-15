@@ -5,6 +5,7 @@ from .log_level import log_level
 from .device import DeviceType
 from .embed_text_types import Prompts, Embed, EmbeddingAndMask
 from .clip_embed_text import get_embedder as get_clip_embedder
+from typing import Optional
 
 class ClipImplementation(Enum):
   HF = auto()
@@ -18,6 +19,7 @@ class ClipCheckpoint(Enum):
 def get_embedder(
   impl: ClipImplementation,
   ckpt: ClipCheckpoint|str,
+  variant: Optional[str] = None,
   subtract_hidden_state_layers = 0,
   max_context_segments = 1,
   device: DeviceType = 'cpu',
@@ -44,7 +46,7 @@ def get_embedder(
           raise "never heard of '{ckpt}' ClipCheckpoint."
       tokenizer: PreTrainedTokenizer = CLIPTokenizer.from_pretrained(model_name, **tokenizer_extra_args)
       with log_level(logging.ERROR):
-        text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, **encoder_extra_args).to(device).eval()
+        text_encoder: CLIPTextModel = CLIPTextModel.from_pretrained(model_name, torch_dtype=torch_dtype, variant=variant, **encoder_extra_args).to(device).eval()
       
       embed: Embed = get_clip_embedder(
         tokenizer=tokenizer,

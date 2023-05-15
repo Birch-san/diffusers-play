@@ -96,6 +96,11 @@ model_name = (
   # 'stabilityai/stable-diffusion-2-base'
   # 'stabilityai/stable-diffusion-2-1-base'
 )
+# variant=None
+# variant='ink'
+# variant='mofu'
+variant='radiance'
+# variant='illusion'
 
 model_needs: ModelNeeds = get_model_needs(model_name, torch.float32 if torch_dtype is None else torch_dtype)
 
@@ -124,11 +129,12 @@ match model_name:
   case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2' | 'waifu-diffusion/wd-1-5-beta3':
     revision = None
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
-  '/home/birch/git/wd-1-5-beta3-out' if model_name == 'waifu-diffusion/wd-1-5-beta3' else model_name,
+  '/home/birch/ml-data/wd1-5-b3' if model_name == 'waifu-diffusion/wd-1-5-beta3' else model_name,
   subfolder='unet',
   revision=revision,
   torch_dtype=torch_dtype,
   upcast_attention=upcast_attention,
+  variant=variant,
 ).to(device).eval()
 
 attn_mode = AttentionMode.Standard
@@ -200,6 +206,7 @@ clip_subtract_hidden_state_layers = 1 if needs_penultimate_clip_hidden_state els
 embed: Embed = get_embedder(
   impl=clip_impl,
   ckpt=clip_ckpt,
+  variant=variant,
   subtract_hidden_state_layers=clip_subtract_hidden_state_layers,
   max_context_segments=model_needs.xattn_max_context_segments,
   device=device,

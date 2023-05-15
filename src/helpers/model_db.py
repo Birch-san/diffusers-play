@@ -32,7 +32,7 @@ def get_clip_ckpt(model_name: str) -> ClipCheckpoint|str:
     case 'hakurei/waifu-diffusion' | 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
       return model_name
     case 'waifu-diffusion/wd-1-5-beta3':
-      return '/home/birch/git/wd-1-5-beta3-out'
+      return '/home/birch/ml-data/wd1-5-b3'
   if model_name in laion_embed_models:
     return ClipCheckpoint.LAION
   return ClipCheckpoint.OpenAI
