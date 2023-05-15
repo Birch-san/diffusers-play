@@ -138,6 +138,101 @@
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src/lora:${workspaceFolder}/src:${env.PYTHONPATH}",
         "PYTORCH_ENABLE_MPS_FALLBACK": "1",
       }
+    },
+    {
+      "name": "Python: Diffusers test",
+      "type": "python",
+      "request": "launch",
+      "program": "examples/dreambooth/train_dreambooth_lora.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "--pretrained_model_name_or_path",
+        "hf-internal-testing/tiny-stable-diffusion-pipe",
+        "--instance_data_dir",
+        "docs/source/en/imgs",
+        "--instance_prompt",
+        "photo",
+        "--resolution",
+        "64",
+        "--train_batch_size",
+        "1",
+        "--gradient_accumulation_steps",
+        "1",
+        "--max_train_steps",
+        "2",
+        "--learning_rate",
+        "5.0e-04",
+        "--scale_lr",
+        "--lr_scheduler",
+        "constant",
+        "--lr_warmup_steps",
+        "0",
+        "--output_dir",
+        "/tmp/tmp.VNE2jZKYCA",
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
     }
+    },
+    {
+      "name": "Python: Diffusers test tests/models/test_models_unet_2d_condition.py",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "tests/models/test_models_unet_2d_condition.py",
+        "-k",
+        "test_model_xattn_padding"
+      ],
+      "env": {
+        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Diffusers convert checkpoint",
+      "type": "python",
+      "request": "launch",
+      "console": "integratedTerminal",
+      "program": "scripts/convert_original_stable_diffusion_to_diffusers.py",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "--checkpoint_path",
+        "/home/birch/git/wd-1-5-beta3/wd-ink-fp16.safetensors",
+        "--from_safetensors",
+        "--dump_path",
+        "/home/birch/git/wd-1-5-beta3-out/wd-ink-fp16.safetensors",
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Convert checkpoint kohya",
+      "type": "python",
+      "request": "launch",
+      "console": "integratedTerminal",
+      "program": "scripts/convert_diffusers20_original_sd.py",
+      "justMyCode": true,
+      "args": [
+        "--fp16",
+        "--v2",
+        "--unet_use_linear_projection",
+        "--use_safetensors",
+        "--reference_model",
+        "stabilityai/stable-diffusion-2-1",
+        "/home/birch/git/wd-1-5-beta3/wd-ink-fp16.safetensors",
+        "/home/birch/git/wd-1-5-beta3-out/",
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/kohya:${env.PYTHONPATH}"
+      }
+    },
   ]
 }
