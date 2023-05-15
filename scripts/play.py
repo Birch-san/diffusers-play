@@ -86,9 +86,10 @@ device = torch.device(device_type)
 model_name = (
   # 'CompVis/stable-diffusion-v1-3'
   # 'CompVis/stable-diffusion-v1-4'
-  'hakurei/waifu-diffusion'
+  # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
+  'waifu-diffusion/wd-1-5-beta3'
   # 'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
@@ -120,10 +121,10 @@ match model_name:
       # there's no (official WD1.3fp16), so download 32-bit weights either way (we can cast dtype afterward)
       revision = None
   # WD 1.5beta only has fp16 revisions for CompVis
-  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
+  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2' | 'waifu-diffusion/wd-1-5-beta3':
     revision = None
 unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
-  model_name,
+  '/home/birch/git/wd-1-5-beta3-out' if model_name == 'waifu-diffusion/wd-1-5-beta3' else model_name,
   subfolder='unet',
   revision=revision,
   torch_dtype=torch_dtype,
@@ -167,7 +168,7 @@ vae_revision = revision
 # vae_revision=None
 
 vae: AutoencoderKL = AutoencoderKL.from_pretrained(
-  model_name,
+  'hakurei/waifu-diffusion' if model_name == 'waifu-diffusion/wd-1-5-beta3' else model_name,
   subfolder='vae',
   revision=vae_revision,
   torch_dtype=vae_dtype,
@@ -249,7 +250,7 @@ match(model_name):
       # WD1.4 was trained on area=640**2 and no side longer than 768
       height = 768
       width = 640**2//height
-  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2':
+  case 'waifu-diffusion/wd-1-5-beta' | 'waifu-diffusion/wd-1-5-beta2' | 'waifu-diffusion/wd-1-5-beta3':
     # WD1.5 was trained on area=896**2 and no side longer than 1152
     sqrt_area=896
     # >1 = portrait
