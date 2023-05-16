@@ -63,7 +63,7 @@ def convert(args):
     else:
         print(f"copy scheduler/tokenizer config from: {args.reference_model if args.reference_model is not None else 'default model'}")
         model_util.save_diffusers_checkpoint(
-            v2_model, args.model_to_save, text_encoder, unet, args.reference_model, vae, args.use_safetensors
+            v2_model, args.model_to_save, text_encoder, unet, args.reference_model, vae, args.use_safetensors, args.variant,
         )
         print(f"model saved.")
 
@@ -109,6 +109,12 @@ def setup_parser() -> argparse.ArgumentParser:
         "--use_safetensors",
         action="store_true",
         help="use safetensors format to save Diffusers model (checkpoint depends on the file extension) / Duffusersモデルをsafetensors形式で保存する（checkpointは拡張子で自動判定）",
+    )
+    parser.add_argument(
+        "--variant",
+        type=str,
+        default=None,
+        help="diffusion_pytorch_model[.variant].bin https://huggingface.co/docs/diffusers/using-diffusers/loading#checkpoint-variants",
     )
 
     parser.add_argument(

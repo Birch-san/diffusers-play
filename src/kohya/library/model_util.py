@@ -1052,7 +1052,7 @@ def save_stable_diffusion_checkpoint(v2, output_file, text_encoder, unet, ckpt_p
     return key_count
 
 
-def save_diffusers_checkpoint(v2, output_dir, text_encoder, unet, pretrained_model_name_or_path, vae=None, use_safetensors=False):
+def save_diffusers_checkpoint(v2, output_dir, text_encoder, unet, pretrained_model_name_or_path, vae=None, use_safetensors=False, variant=None):
     if pretrained_model_name_or_path is None:
         # load default settings for v1/v2
         if v2:
@@ -1075,7 +1075,7 @@ def save_diffusers_checkpoint(v2, output_dir, text_encoder, unet, pretrained_mod
         feature_extractor=None,
         requires_safety_checker=None,
     )
-    pipeline.save_pretrained(output_dir, safe_serialization=use_safetensors)
+    pipeline.save_pretrained(output_dir, safe_serialization=use_safetensors, variant=variant)
 
 
 VAE_PREFIX = "first_stage_model."
