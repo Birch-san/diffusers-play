@@ -234,5 +234,18 @@
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/kohya:${env.PYTHONPATH}"
       }
     },
+    {
+      "name": "Python: Diffusers pipeline",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/diffusers_pipeline.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.31",
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src:${env.PYTHONPATH}",
+        "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+      }
+    },
   ]
 }
