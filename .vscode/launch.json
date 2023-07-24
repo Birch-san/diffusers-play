@@ -235,6 +235,26 @@
       }
     },
     {
+      "name": "Python: Convert SDXL checkpoint kohya",
+      "type": "python",
+      "request": "launch",
+      "console": "integratedTerminal",
+      "program": "scripts/convert_diffusers20_original_sdxl.py",
+      "justMyCode": true,
+      "args": [
+        "--fp16",
+        "--use_safetensors",
+        "--reference_model",
+        "stabilityai/stable-diffusion-xl-base-0.9",
+        // "--variant", "illusion",
+        "/home/birch/ml-weights/wdxl/wdxl-aesthetic-0.9.safetensors",
+        "/home/birch/ml-weights/wdxl-diffusers",
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/kohya:${env.PYTHONPATH}"
+      }
+    },
+    {
       "name": "Python: Diffusers pipeline",
       "type": "python",
       "request": "launch",
