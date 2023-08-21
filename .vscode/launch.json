@@ -305,8 +305,9 @@
         "--use_safetensors",
         "--reference_model",
         "stabilityai/stable-diffusion-2-1",
-        "/home/birch/git/wd-1-5-beta3/wd-ink-fp16.safetensors",
-        "/home/birch/git/wd-1-5-beta3-out/",
+        "--variant", "illusion",
+        "/home/birch/git/wd-1-5-beta3/wd-beta3-base-fp16.safetensors",
+        "/home/birch/ml-data/wd1-5-b3",
       ],
       "env": {
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/kohya:${env.PYTHONPATH}"
