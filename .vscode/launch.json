@@ -140,7 +140,7 @@
       }
     },
     {
-      "name": "Python: Diffusers test",
+      "name": "Python: Diffusers test train_dreambooth_lora.py",
       "type": "python",
       "request": "launch",
       "program": "examples/dreambooth/train_dreambooth_lora.py",
@@ -148,29 +148,47 @@
       "cwd": "${workspaceFolder}/src/diffusers",
       "justMyCode": true,
       "args": [
-        "--pretrained_model_name_or_path",
-        "hf-internal-testing/tiny-stable-diffusion-pipe",
-        "--instance_data_dir",
-        "docs/source/en/imgs",
-        "--instance_prompt",
-        "photo",
-        "--resolution",
-        "64",
-        "--train_batch_size",
-        "1",
-        "--gradient_accumulation_steps",
-        "1",
-        "--max_train_steps",
-        "2",
-        "--learning_rate",
-        "5.0e-04",
+        "--pretrained_model_name_or_path", "hf-internal-testing/tiny-stable-diffusion-pipe",
+        "--instance_data_dir", "docs/source/en/imgs",
+        "--instance_prompt", "photo",
+        "--resolution", "64",
+        "--train_batch_size", "1",
+        "--gradient_accumulation_steps", "1",
+        "--max_train_steps", "2",
+        "--learning_rate", "5.0e-04",
         "--scale_lr",
-        "--lr_scheduler",
-        "constant",
-        "--lr_warmup_steps",
-        "0",
-        "--output_dir",
-        "/tmp/tmp.VNE2jZKYCA",
+        "--lr_scheduler", "constant",
+        "--lr_warmup_steps", "0",
+        "--output_dir", "/tmp/tmp.VNE2jZKYCA",
+      ],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Diffusers test train_dreambooth_lora.py (IF)",
+      "type": "python",
+      "request": "launch",
+      "program": "examples/dreambooth/train_dreambooth_lora.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "--pretrained_model_name_or_path", "hf-internal-testing/tiny-if-pipe",
+        "--instance_data_dir", "docs/source/en/imgs",
+        "--instance_prompt", "photo",
+        "--resolution", "64",
+        "--train_batch_size", "1",
+        "--gradient_accumulation_steps", "1",
+        "--max_train_steps", "2",
+        "--learning_rate", "5.0e-04",
+        "--scale_lr",
+        "--lr_scheduler", "constant",
+        "--lr_warmup_steps", "0",
+        "--output_dir", "/tmp/tmphn61xefb",
+        "--pre_compute_text_embeddings",
+        "--tokenizer_max_length=77",
+        "--text_encoder_use_attention_mask"
       ],
       "env": {
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
@@ -188,6 +206,66 @@
         "tests/models/test_models_unet_2d_condition.py",
         "-k",
         "test_model_xattn_padding"
+      ],
+      "env": {
+        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Diffusers test examples/test_examples.py",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "-n", "10",
+        "--max-worker-restart=0",
+        "--dist=loadfile",
+        "--make-reports=tests_torch_example_cpu",
+        "examples/test_examples.py"
+      ],
+      "env": {
+        // "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Diffusers StableDiffusionLatentUpscalePipelineFastTests",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "tests/pipelines/stable_diffusion_2/test_stable_diffusion_latent_upscale.py",
+        "-k",
+        "test_attention_slicing_forward_pass"
+      ],
+      "env": {
+        "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
+        "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
+      }
+    },
+    {
+      "name": "Python: Diffusers 'fast Pipeline CPU tests'",
+      "type": "python",
+      "request": "launch",
+      "module": "pytest",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/src/diffusers",
+      "justMyCode": true,
+      "args": [
+        "-n", "10",
+        "--max-worker-restart", "0",
+        "--dist=loadfile",
+        "-s", "-v", "-k",
+        "not Flax and not Onnx",
+        "--make-reports=tests_torch_cpu_pipelines",
+        "tests/pipelines"
       ],
       "env": {
         "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
