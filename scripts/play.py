@@ -25,7 +25,7 @@ from torch.nn.functional import pad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0, SlicedAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
-from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
+from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m, sample_heun, sample_dpmpp_2m_sde, sample_dpmpp_sde
 
 from helpers.attention.mode import AttentionMode
 from helpers.attention.multi_head_attention.to_mha import to_mha
@@ -136,6 +136,15 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   upcast_attention=upcast_attention,
   variant=variant,
 ).to(device).eval()
+torch.compile(
+  unet,
+  # mode='max-autotune',
+  options={
+    'triton.cudagraphs': True,
+    'epilogue_fusion': True,
+    'shape_padding': True,
+    'max_autotune': True,
+  })
 
 attn_mode = AttentionMode.Standard
 match(attn_mode):
@@ -340,42 +349,55 @@ batch_latent_maker = BatchLatentMaker(
 # dynthresh_percentiles: List[Optional[float]] = [None, 0.995]
 # dynthresh_percentiles: List[Optional[float]] = [None]
 
+# seeds_nominal: List[int] = [
+#   8780466,
+#   3222018746,
+#   4116016883,
+#   3372409689,
+#   673167623,
+# ]
+
 # max_batch_size = 8
-max_batch_size = 10
+max_batch_size = 8
 # n_rand_seeds = max_batch_size
-n_rand_seeds = 2
+n_rand_seeds = 4
 # n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 prompt_texts: List[str] = [
   # 'masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
   # 'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
-  'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
-  'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
-  # 'kochiya sanae, carnelian, general content, one girl, solo, upper body, light smile, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, bare shoulders, blue skirt, snake hair ornament, blue eyes, white sleeves, wide hips, hand up, watercolor (medium), traditional media, painting (medium)',
-  # 'patchouli knowledge, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, mob hat, striped, collar, purple dress, striped, wide hips, purple eyes, purple hair, watercolor (medium), traditional media, painting (medium)',
+  # 'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
+  # 'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
+  'kochiya sanae, carnelian, general content, one girl, solo, upper body, light smile, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, bare shoulders, blue skirt, snake hair ornament, blue eyes, white sleeves, wide hips, hand up, watercolor (medium), traditional media, painting (medium)',
+  'patchouli knowledge, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, mob hat, striped, collar, purple dress, striped, wide hips, purple eyes, purple hair, watercolor (medium), traditional media, painting (medium)',
   # 'flandre scarlet, carnelian, 1girl, blonde hair, blush, light smile, collared shirt, hair between eyes, hat bow, looking at viewer, medium hair, mob cap, upper body, puffy short sleeves, red bow, watercolor (medium), traditional media, red eyes, red vest, small breasts, upper body, white shirt, yellow ascot',
-  # 'matou sakura, carnelian, 1girl, purple hair, looking at viewer, medium breasts, hair between eyes, floating hair, purple eyes, long hair, long sleeves, collared shirt, brown vest, black skirt, white sleeves, school uniform, red ribbon, wide hips, lying, marker (medium)',
+  'matou sakura, carnelian, 1girl, purple hair, looking at viewer, medium breasts, hair between eyes, floating hair, purple eyes, long hair, long sleeves, collared shirt, brown vest, black skirt, white sleeves, school uniform, red ribbon, wide hips, lying, marker (medium)',
   # 'konpaku youmu, sazanami mio, from side, white shirt, green skirt, silver hair, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil (medium)',
   # 'konpaku youmu, sazanami mio, safe, high quality, white shirt, green skirt, silver hair, from side, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil',
-  # 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
-  # 'aqua (konosuba), carnelian, general content, one girl, looking at viewer, blue hair, bangs, medium breasts, frills, blue skirt, blue shirt, detached sleeves, long hair, blue eyes, green ribbon, sleeveless shirt, gem, thighhighs under boots, watercolor (medium), traditional media'
+  'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
+  # 'aqua (konosuba), carnelian, general content, one girl, looking at viewer, blue hair, bangs, medium breasts, frills, blue skirt, blue shirt, detached sleeves, long hair, blue eyes, green ribbon, sleeveless shirt, gem, thighhighs under boots, watercolor (medium), traditional media',
+  # 'rem (re:zero), carnelian, general content, upper body, hair between eyes, looking at viewer, one girl, blue hair, bangs, floating hair, blue eyes, medium breasts, roswaal mansion maid uniform, re:zero kara hajimeru isekai seikatsu',
+  # 'masterpiece painting of lightning badger, epic composition, dramatic lighting, highly intricate, expressive, baroque scenic, sylvain sarrailh, full resolution, 4k, greg rutkowski, global illumination, featured on artstation',
 ]
 
 seeds: Iterable[int] = chain(
   # (2678555696,),
+  # (42,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
+  # (seed for seed in seeds_nominal for _ in range(len(prompt_texts))),
   # (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
   (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
-uncond_prompt=BasicPrompt(text='')
-# uncond_prompt=BasicPrompt(
-#   text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
-# )
+# uncond_prompt=BasicPrompt(text='')
+uncond_prompt=BasicPrompt(
+  text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
+)
 
-cfg_scale = 7.5
+# cfg_scale = 7.5
+cfg_scale = 7.
 conditions: Iterable[ConditionSpec] = cycle(SingleCondition(
   cfg=CFG(
     scale=cfg_scale,
@@ -593,12 +615,13 @@ with no_grad():
       callback = None
 
     tic = time.perf_counter()
-    latents: Tensor = sample_dpmpp_2m(
+    latents: Tensor = sample_dpmpp_2m_sde(
       denoiser,
       latents,
       sigmas,
-      # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
+      noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
       callback=callback,
+      # s_churn=0.1,
     ).to(vae_dtype)
     del denoiser
     if device.type == 'cuda':
