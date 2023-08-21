@@ -192,7 +192,7 @@
       ],
       "env": {
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${env.PYTHONPATH}"
-    }
+      }
     },
     {
       "name": "Python: Diffusers test tests/models/test_models_unet_2d_condition.py",
@@ -340,7 +340,6 @@
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
-        "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.31",
         "PYTHONPATH": "${workspaceFolder}/src/diffusers/src:${workspaceFolder}/src/k-diffusion:${workspaceFolder}/src:${env.PYTHONPATH}",
         "PYTORCH_ENABLE_MPS_FALLBACK": "1",
       }
