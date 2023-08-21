@@ -6,6 +6,8 @@ from typing import Protocol, Optional
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
 from .approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
+from k_diffusion.external import WrappedModelProto
+from helpers.schedule_params import quantize_to
 
 class Denoiser(Protocol):
   cond_summation_ixs: LongTensor
@@ -16,7 +18,7 @@ class Denoiser(Protocol):
   ) -> FloatTensor: ...
 
 @dataclass
-class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
+class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser, WrappedModelProto):
   denoiser: DiffusersSDDenoiser
   cross_attention_conds: FloatTensor
   cross_attention_mask: Optional[BoolTensor]
@@ -30,6 +32,16 @@ class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
     super().__post_init__()
     self.cond_count = self.cross_attention_conds.size(0)
     self.batch_size = self.conds_per_prompt.size(0)
+  
+  def sigma_to_t(self, sigma: FloatTensor) -> FloatTensor:
+    return self.denoiser.sigma_to_t(sigma)
+
+  def t_to_sigma(self, t: FloatTensor) -> FloatTensor:
+    return self.denoiser.t_to_sigma(t)
+
+  def discretize_sigma(self, sigma: FloatTensor) -> FloatTensor:
+    # return quantize_to(sigma.unsqueeze(0), self.denoiser.sigmas).squeeze(0)
+    return sigma
 
 @dataclass
 class BatchNoCFGDenoiser(AbstractBatchDenoiser):

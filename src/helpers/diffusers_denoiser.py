@@ -5,8 +5,14 @@ from k_diffusion.external import DiscreteEpsDDPMDenoiser, DiscreteVDDPMDenoiser
 from typing import Union, Optional
 import torch
 
-class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
-  inner_model: UNet2DConditionModel
+# inner_model: UNet2DConditionModel = None
+# class TestDenoiser(DiscreteEpsDDPMDenoiser[UNet2DConditionModel]):
+#   pass
+# t = TestDenoiser(inner_model)
+# t.inner_model.set_
+
+class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser[UNet2DConditionModel]):
+  # inner_model: UNet2DConditionModel
   sampling_dtype: torch.dtype
   def __init__(self, unet: UNet2DConditionModel, alphas_cumprod: Tensor, dtype: torch.dtype = None):
     self.sampling_dtype = unet.dtype if dtype is None else dtype
@@ -38,8 +44,8 @@ class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
   def sigma_to_t(self, sigma: Tensor, quantize=None) -> Tensor:
     return super().sigma_to_t(sigma, quantize=quantize).to(dtype=self.inner_model.dtype)
 
-class DiffusersSD2Denoiser(DiscreteVDDPMDenoiser):
-  inner_model: UNet2DConditionModel
+class DiffusersSD2Denoiser(DiscreteVDDPMDenoiser[UNet2DConditionModel]):
+  # inner_model: UNet2DConditionModel
   sampling_dtype: torch.dtype
   def __init__(self, unet: UNet2DConditionModel, alphas_cumprod: Tensor, dtype: torch.dtype = None):
     self.sampling_dtype = unet.dtype if dtype is None else dtype
