@@ -90,17 +90,17 @@ model_name = (
   # 'hakurei/waifu-diffusion'
   # 'waifu-diffusion/wd-1-5-beta'
   # 'waifu-diffusion/wd-1-5-beta2'
-  'waifu-diffusion/wd-1-5-beta3'
-  # 'runwayml/stable-diffusion-v1-5'
+  # 'waifu-diffusion/wd-1-5-beta3'
+  'runwayml/stable-diffusion-v1-5'
   # 'stabilityai/stable-diffusion-2'
   # 'stabilityai/stable-diffusion-2-1'
   # 'stabilityai/stable-diffusion-2-base'
   # 'stabilityai/stable-diffusion-2-1-base'
 )
-# variant=None
+variant=None
 # variant='ink'
 # variant='mofu'
-variant='radiance'
+# variant='radiance'
 # variant='illusion'
 
 model_needs: ModelNeeds = get_model_needs(model_name, torch.float32 if torch_dtype is None else torch_dtype)
@@ -138,7 +138,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   variant=variant,
 ).to(device).eval()
 
-attn_mode = AttentionMode.Standard
+attn_mode = AttentionMode.Classic
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Classic:
@@ -273,8 +273,13 @@ match(model_name):
     width = 768 if is_768 else 512
     height = width
 
+trained_height, trained_width = height, width
+
+height = width = 768
+
 self_attn_key_length_factor=(height*width)/(trained_height*trained_width)
-filename_qualifier=''
+filename_qualifier=f'topk.{self_attn_key_length_factor:06.3f}'
+# filename_qualifier=''
 
 set_key_length_factor: TapAttn = make_set_key_length_factor(
   self_attn_key_length_factor=self_attn_key_length_factor,
@@ -312,7 +317,7 @@ batch_latent_maker = BatchLatentMaker(
 #   1527468831,
 #   1659224482,
 # ]
-# seeds_nominal: List[int] = [
+seeds_nominal: List[int] = [
 #   86322125, # pretty stable
 #   340323845,
 #   436376137,
@@ -331,18 +336,21 @@ batch_latent_maker = BatchLatentMaker(
 #   2106704619, # slightly multimodal
 #   2573662367,
 #   2637280979,
-#   2704538591,
-#   2886215181,
-#   3013151840, # pretty stable
-#   3069611639, # pretty stable
-#   3395487508, # pretty stable
-#   3426263955,
-#   3760630765,
+  2704538591,
+  2886215181,
+  3013151840, # pretty stable
+  3069611639, # pretty stable
+  3395487508, # pretty stable
+  3426263955,
+  3760630765,
 #   # new candidates:
 #   4272841740,
 #   3505358989,
 #   3725857796, # CFG artifacts early and many
-# ]
+]
+seeds_nominal: List[int] = [
+  436376137,
+]
 # cfg_scales_: Iterable[float] = (1.0, 1.75, 2.5, 5., 7.5, 10., 15., 20., 25., 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 10., 12.5, 15., 17.5, 20., 22.5, 25., 27.5, 30.,) #20.,)
 # cfg_scales_: Iterable[float] = (7.5, 30.,) #20.,)
@@ -354,14 +362,14 @@ batch_latent_maker = BatchLatentMaker(
 # dynthresh_percentiles: List[Optional[float]] = [None]
 
 # max_batch_size = 8
-max_batch_size = 10
+max_batch_size = 1
 # n_rand_seeds = max_batch_size
 n_rand_seeds = 2
 # n_rand_seeds = (max_batch_size)//len(cfg_scales_)
 
 prompt_texts: List[str] = [
   # 'masterpiece character portrait of shrine maiden, artgerm, ilya kuvshinov, tony pyykko, from side, looking at viewer, long black hair, upper body, 4k hdr, global illumination, lit from behind, oriental scenic, Pixiv featured, vaporwave',
-  # 'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
+  'masterpiece character portrait of a blonde girl, full resolution, 4 k, mizuryuu kei, akihiko. yoshida, Pixiv featured, baroque scenic, by artgerm, sylvain sarrailh, rossdraws, wlop, global illumination',
   # 'hakurei reimu, carnelian, general content, one girl, solo, upper body, glaring, looking at viewer, hair between eyes, floating hair, touhou project, bare shoulders, hair bow, red dress, yellow ascot, watercolor (medium), traditional media, painting (medium)',
   # 'kirisame marisa, carnelian, general content, one girl, solo, upper body, grin, looking at viewer, hair between eyes, floating hair, small breasts, touhou project, blonde hair, black dress, white ascot, puffy short sleeves watercolor (medium), traditional media, painting (medium)',
   # 'kochiya sanae, carnelian, general content, one girl, solo, upper body, light smile, looking at viewer, hair between eyes, floating hair, medium breasts, touhou project, bare shoulders, blue skirt, snake hair ornament, blue eyes, white sleeves, wide hips, hand up, watercolor (medium), traditional media, painting (medium)',
@@ -370,7 +378,7 @@ prompt_texts: List[str] = [
   # 'matou sakura, carnelian, 1girl, purple hair, looking at viewer, medium breasts, hair between eyes, floating hair, purple eyes, long hair, long sleeves, collared shirt, brown vest, black skirt, white sleeves, school uniform, red ribbon, wide hips, lying, marker (medium)',
   # 'konpaku youmu, sazanami mio, from side, white shirt, green skirt, silver hair, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil (medium)',
   # 'konpaku youmu, sazanami mio, safe, high quality, white shirt, green skirt, silver hair, from side, looking at viewer, small breasts, hair between eyes, floating hair, short hair, neck ribbon, short sleeves, hair ribbon, hairband, bangs, miniskirt, vest, marker (medium), colored pencil',
-  'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
+  # 'artoria pendragon (fate), carnelian, 1girl, general content, upper body, white shirt, blonde hair, looking at viewer, medium breasts, hair between eyes, floating hair, green eyes, blue ribbon, long sleeves, light smile, hair ribbon, watercolor (medium), traditional media',
   # 'aqua (konosuba), carnelian, general content, one girl, looking at viewer, blue hair, bangs, medium breasts, frills, blue skirt, blue shirt, detached sleeves, long hair, blue eyes, green ribbon, sleeveless shirt, gem, thighhighs under boots, watercolor (medium), traditional media'
 ]
 
@@ -380,15 +388,16 @@ seeds: Iterable[int] = chain(
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
   # (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
-  (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
+  (seed for seed in seeds_nominal for _ in range(len(prompt_texts))),
+  # (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
-# uncond_prompt=BasicPrompt(text='')
-uncond_prompt=BasicPrompt(
-  text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
-)
+uncond_prompt=BasicPrompt(text='')
+# uncond_prompt=BasicPrompt(
+#   text='lowres, bad anatomy, bad hands, missing fingers, extra fingers, blurry, mutation, deformed face, ugly, bad proportions, monster, cropped, worst quality, jpeg, bad posture, long body, long neck, jpeg artifacts, deleted, bad aesthetic, realistic, real life, instagram'
+# )
 
-cfg_scale = 7.
+cfg_scale = 7.5
 conditions: Iterable[ConditionSpec] = cycle(SingleCondition(
   cfg=CFG(
     scale=cfg_scale,
