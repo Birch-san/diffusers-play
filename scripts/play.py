@@ -66,6 +66,7 @@ from PIL import Image
 import time
 import numpy as np
 from einops import repeat as einops_repeat
+import re
 
 half = True
 
@@ -590,7 +591,7 @@ with no_grad():
       seed=seeds[0],
     )
   
-    base_count = len(fnmatch.filter(os.listdir(sample_path), '*.png'))
+    base_count = len([path for path in os.listdir(sample_path) if re.search(r'\.(pn|jp)g$', path)])
     sample_stems: List[str] = [get_sample_stem(
       base_count=base_count,
       ix_in_batch=ix,
@@ -655,7 +656,7 @@ with no_grad():
       consistent_batch_size = consistent_batch_size if batch_sample_count == consistent_batch_size else None
 
     for stem, image in zip(sample_stems, pil_images):
-      image.save(os.path.join(sample_path, f"{stem}.png"))
+      image.save(os.path.join(sample_path, f"{stem}.jpg"), subsampling=0, quality=95)
     del pil_images
     if device.type == 'cuda':
       torch.cuda.empty_cache()
