@@ -14,5 +14,7 @@ class AttentionMode(Enum):
     TorchMultiheadAttention = auto()
     # AttnProcessor2_0; uses torch.nn.functional.scaled_dot_product_attention
     ScaledDPAttn = auto()
+    # fork of AttnProcessor2_0 with a custom self-attn bias to encourage long-distance associations
+    ScaledDPAttnDistBiased = auto()
     # XFormersAttnProcessor
     Xformers = auto()

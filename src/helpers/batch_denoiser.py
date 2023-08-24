@@ -2,7 +2,7 @@ from abc import ABC
 from dataclasses import dataclass, field
 from torch import LongTensor, BoolTensor, FloatTensor, where
 import torch
-from typing import Protocol, Optional
+from typing import Protocol, Optional, Dict, Any
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
 from .approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
@@ -26,6 +26,12 @@ class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
   conds_per_prompt: LongTensor
   cond_weights: FloatTensor
   center_denoise_outputs: Optional[BoolTensor]
+  attn_extra_kwargs: Dict[str, Any]
+  # when True: assigns `sigma: float` property to every Attention layer in Unet
+  # this is only useful if you're on a diffusers branch that makes use of that property
+  # (e.g. saving out intermediate tensors, including the sigma in the filename)
+  set_sigma_property: bool
+  pass_sigma_attn_kwarg: bool
   cond_count: int = field(init=False)
   batch_size: int = field(init=False)
   
@@ -50,6 +56,16 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
+    sigma_: float = sigma[0].item()
+
+    if self.set_sigma_property:
+      set_sigma: TapAttn = make_set_sigma(sigma_)
+      tap_module: TapModule = tap_attn_to_tap_module(set_sigma)
+      self.denoiser.inner_model.apply(tap_module)
+    
+    sigma_kwargs = { 'sigma': sigma_ } if self.pass_sigma_attn_kwarg else {}
+    attn_extra_kwargs = { **self.attn_extra_kwargs, **sigma_kwargs }
+
     noised_latents_in: FloatTensor = noised_latents.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
     del noised_latents
     sigma_in: FloatTensor = sigma.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
@@ -59,6 +75,7 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
       sigma=sigma_in,
       encoder_hidden_states=self.cross_attention_conds,
       attention_mask=self.cross_attention_mask,
+      attn_extra_kwargs=attn_extra_kwargs,
     )
     del noised_latents_in, sigma_in
     if self.center_denoise_outputs is not None:
@@ -86,10 +103,6 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
   cond_ex_uncond_count: LongTensor = field(init=False)
   cfg_scaled_cond_weights: FloatTensor = field(init=False)
   mimic_scaled_cond_weights: Optional[FloatTensor] = field(init=False)
-  # when True: assigns `sigma: float` property to every Attention layer in Unet
-  # this is only useful if you're on a diffusers branch that makes use of that property
-  # (e.g. saving out intermediate tensors, including the sigma in the filename)
-  set_sigma_property: bool = field(init=False, default=False)
   # if you're really at your memory limit (e.g. denoising large images without mem-efficient attn)
   # you can halve your batch size by separating your denoising of uncond and cond into different batches
   # this is only likely to be necessary if you're doing heavy customization of diffusers' attention algorithm (e.g. rewriting softmax)
@@ -197,6 +210,9 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
       tap_module: TapModule = tap_attn_to_tap_module(set_sigma)
       self.denoiser.inner_model.apply(tap_module)
 
+    sigma_kwargs = { 'sigma': sigma_ } if self.pass_sigma_attn_kwarg else {}
+    attn_extra_kwargs = { **self.attn_extra_kwargs, **sigma_kwargs }
+
     disable_dynthresh = self.dynthresh_until_sigma is not None and sigma_ < self.dynthresh_until_sigma
     disable_cfg = self.cfg_until_sigma is not None and sigma_ < self.cfg_until_sigma
     if disable_cfg:
@@ -224,12 +240,14 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
         sigma=sigma_in.index_select(0, self.uncond_ixs),
         encoder_hidden_states=cross_attention_conds.index_select(0, self.uncond_ixs),
         cross_attention_mask=cross_attention_mask.index_select(0, self.uncond_ixs),
+        attn_extra_kwargs=attn_extra_kwargs,
       )
       conds: FloatTensor = self.denoiser.forward(
         input=noised_latents_in.index_select(0, self.cond_ixs),
         sigma=sigma_in.index_select(0, self.cond_ixs),
         encoder_hidden_states=cross_attention_conds.index_select(0, self.cond_ixs),
         cross_attention_mask=cross_attention_mask.index_select(0, self.cond_ixs),
+        attn_extra_kwargs=attn_extra_kwargs,
       )
       del noised_latents_in, sigma_in
       if self.center_denoise_outputs is not None:
@@ -249,6 +267,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
         sigma=sigma_in,
         encoder_hidden_states=cross_attention_conds,
         cross_attention_mask=cross_attention_mask,
+        attn_extra_kwargs=attn_extra_kwargs,
       )
       if self.center_denoise_outputs is not None:
         denoised_latents = where(
@@ -279,7 +298,7 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
 
 
 @dataclass
-class BatchDenoiserFactory():
+class BatchDenoiserFactory:
   denoiser: DiffusersSDDenoiser
   def __call__(
     self,
@@ -297,6 +316,9 @@ class BatchDenoiserFactory():
     pixel_space_dynthresh: bool = False,
     cfg_until_sigma: Optional[float] = None,
     dynthresh_until_sigma: Optional[float] = None,
+    attn_extra_kwargs: Dict[str, Any] = {},
+    set_sigma_property: bool = False,
+    pass_sigma_attn_kwarg: bool = False,
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -307,6 +329,9 @@ class BatchDenoiserFactory():
         conds_per_prompt=conds_per_prompt,
         cond_weights=cond_weights,
         center_denoise_outputs=center_denoise_outputs,
+        attn_extra_kwargs=attn_extra_kwargs,
+        set_sigma_property=set_sigma_property,
+        pass_sigma_attn_kwarg=pass_sigma_attn_kwarg,
       )
     return BatchCFGDenoiser(
       denoiser=self.denoiser,
@@ -315,6 +340,9 @@ class BatchDenoiserFactory():
       conds_per_prompt=conds_per_prompt,
       cond_weights=cond_weights,
       center_denoise_outputs=center_denoise_outputs,
+      attn_extra_kwargs=attn_extra_kwargs,
+      set_sigma_property=set_sigma_property,
+      pass_sigma_attn_kwarg=pass_sigma_attn_kwarg,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,

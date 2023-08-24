@@ -1,7 +1,27 @@
 import torch.nn.functional as F
 from diffusers.models.attention import Attention
-from torch import FloatTensor, BoolTensor
-from typing import Optional
+from torch import FloatTensor, BoolTensor, arange
+from typing import Optional, NamedTuple
+import torch
+
+class Dimensions(NamedTuple):
+    height: int
+    width: int
+
+def make_wacky_bias(size: Dimensions, device="cpu") -> FloatTensor:
+    h, w = size
+    h_ramp = arange(h, device=device, dtype=torch.float16)
+    w_ramp = arange(w, device=device, dtype=torch.float16)
+
+    hdist = h_ramp.reshape(1, 1, h, 1) - h_ramp.reshape(h, 1, 1, 1)
+    wdist = w_ramp.reshape(1, 1, 1, w) - w_ramp.reshape(1, w, 1, 1)
+    sq_dist = hdist**2 + wdist**2
+    dist = sq_dist**.5
+    log_dist = dist.log().clamp(min=0)
+    bias = log_dist
+    bias = bias.reshape(h*w, h*w)
+
+    return bias
 
 class DistBiasedAttnProcessor:
     r"""
@@ -22,8 +42,12 @@ class DistBiasedAttnProcessor:
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
+        key_length_factor: Optional[float] = None,
+        sigma: Optional[float] = None,
     ) -> FloatTensor:
         residual = hidden_states
+
+        is_self_attn = encoder_hidden_states is None
 
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
@@ -64,6 +88,15 @@ class DistBiasedAttnProcessor:
 
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+
+        if is_self_attn and key_length_factor is not None and key_length_factor != 1.0:
+            assert attention_mask is None
+            # TODO: access aspect ratio. for now we just assume a square
+            current_h = current_w = int(sequence_length**.5)
+            current_size = Dimensions(height=current_h, width=current_w)
+            attention_mask: FloatTensor = make_wacky_bias(size=current_size, device=query.device)
+            # broadcast over batch and head dims
+            attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
 
         # the output of sdp = (batch, num_heads, seq_len, head_dim)
         # TODO: add support for attn.scale when we move to Torch 2.1

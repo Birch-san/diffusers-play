@@ -2,7 +2,7 @@ from torch import Tensor, FloatTensor, BoolTensor
 from diffusers.models import UNet2DConditionModel
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 from k_diffusion.external import DiscreteEpsDDPMDenoiser, DiscreteVDDPMDenoiser
-from typing import Union, Optional
+from typing import Union, Optional, Dict, Any
 import torch
 
 class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
@@ -19,12 +19,14 @@ class DiffusersSDDenoiser(DiscreteEpsDDPMDenoiser):
     encoder_hidden_states: Tensor,
     return_dict: bool = True,
     cross_attention_mask: Optional[BoolTensor] = None,
+    attn_extra_kwargs: Dict[str, Any] = {},
   ) -> Tensor:
     out: UNet2DConditionOutput = self.inner_model(
       sample.to(self.inner_model.dtype),
       timestep.to(self.inner_model.dtype),
       encoder_hidden_states=encoder_hidden_states.to(self.inner_model.dtype),
       encoder_attention_mask=cross_attention_mask,
+      cross_attention_kwargs=attn_extra_kwargs,
       return_dict=return_dict,
     )
     return out.sample.to(self.sampling_dtype)
@@ -46,12 +48,14 @@ class DiffusersSD2Denoiser(DiscreteVDDPMDenoiser):
     encoder_hidden_states: Tensor,
     return_dict: bool = True,
     cross_attention_mask: Optional[BoolTensor] = None,
+    attn_extra_kwargs: Dict[str, Any] = {},
     ) -> Tensor:
     out: UNet2DConditionOutput = self.inner_model(
       sample.to(self.inner_model.dtype),
       timestep.to(self.inner_model.dtype),
       encoder_hidden_states=encoder_hidden_states.to(self.inner_model.dtype),
       encoder_attention_mask=cross_attention_mask,
+      cross_attention_kwargs=attn_extra_kwargs,
       return_dict=return_dict,
     )
     return out.sample.to(self.sampling_dtype)

@@ -33,6 +33,7 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
+from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -61,7 +62,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict
+from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, Any
 from PIL import Image
 import time
 import numpy as np
@@ -139,7 +140,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   variant=variant,
 ).to(device).eval()
 
-attn_mode = AttentionMode.Classic
+attn_mode = AttentionMode.ScaledDPAttnDistBiased
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Classic:
@@ -158,6 +159,8 @@ match(attn_mode):
     unet.apply(tap_module)
   case AttentionMode.ScaledDPAttn:
     unet.set_attn_processor(AttnProcessor2_0())
+  case AttentionMode.ScaledDPAttnDistBiased:
+    unet.set_attn_processor(DistBiasedAttnProcessor())
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
@@ -287,6 +290,14 @@ set_key_length_factor: TapAttn = make_set_key_length_factor(
 )
 tap_module: TapModule = tap_attn_to_tap_module(set_key_length_factor)
 unet.apply(tap_module)
+
+# consider set_sigma_property deprecated; prefer passing args to attn processor, since this can be done without modifying diffusers library
+set_sigma_property = False
+pass_sigma_attn_kwarg = False
+attn_extra_kwargs: Dict[str, Any] = {}
+if attn_mode is AttentionMode.ScaledDPAttnDistBiased:
+  attn_extra_kwargs['key_length_factor'] = self_attn_key_length_factor
+  pass_sigma_attn_kwarg = True
 
 latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
@@ -576,6 +587,9 @@ with no_grad():
       pixel_space_dynthresh=pixel_space_dynthresh,
       cfg_until_sigma=cfg_until_sigma,
       dynthresh_until_sigma=dynthresh_until_sigma,
+      attn_extra_kwargs=attn_extra_kwargs,
+      set_sigma_property=set_sigma_property,
+      pass_sigma_attn_kwarg=pass_sigma_attn_kwarg,
     )
     del embedding_denorm, mask_denorm, conds_per_prompt_tensor, cond_weights, uncond_ixs, cfg_scales, mimic_scales, center_denoise_outputs
 
