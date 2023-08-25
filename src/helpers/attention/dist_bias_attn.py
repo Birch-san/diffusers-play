@@ -8,7 +8,7 @@ class Dimensions(NamedTuple):
     height: int
     width: int
 
-def make_wacky_bias(size: Dimensions, device="cpu") -> FloatTensor:
+def make_wacky_bias(size: Dimensions, factor: float, device="cpu") -> FloatTensor:
     h, w = size
     h_ramp = arange(h, device=device, dtype=torch.float16)
     w_ramp = arange(w, device=device, dtype=torch.float16)
@@ -18,7 +18,7 @@ def make_wacky_bias(size: Dimensions, device="cpu") -> FloatTensor:
     sq_dist = hdist**2 + wdist**2
     dist = sq_dist**.5
     log_dist = dist.log().clamp(min=0)
-    bias = log_dist
+    bias = log_dist*factor
     bias = bias.reshape(h*w, h*w)
 
     return bias
@@ -90,11 +90,15 @@ class DistBiasedAttnProcessor:
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         if is_self_attn and key_length_factor is not None and key_length_factor != 1.0:
+            if sigma > 4:
+                factor=1
+            else:
+                factor=-.1
             assert attention_mask is None
             # TODO: access aspect ratio. for now we just assume a square
             current_h = current_w = int(sequence_length**.5)
             current_size = Dimensions(height=current_h, width=current_w)
-            attention_mask: FloatTensor = make_wacky_bias(size=current_size, device=query.device)
+            attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
             # broadcast over batch and head dims
             attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
 
