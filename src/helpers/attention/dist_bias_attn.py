@@ -56,13 +56,6 @@ def make_neighbourhood_mask(size: Dimensions, size_orig: Dimensions, device="cpu
 
     return mask.view(h * w, h * w)
 
-def compute_attn_weight_entropy(weights: FloatTensor) -> FloatTensor:
-    """
-    By Katherine Crowson.
-    """
-    entropy: FloatTensor = torch.sum(torch.special.entr(weights), dim=-1)
-    return entropy
-
 class DistBiasedAttnProcessor:
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
@@ -72,19 +65,16 @@ class DistBiasedAttnProcessor:
     """
     bias_mode: BiasMode
     rescale_softmax_output: bool
-    log_entropy: bool
 
     def __init__(
         self,
         bias_mode=BiasMode.LogBias,
         rescale_softmax_output=False,
-        log_entropy = False,
     ):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
         self.bias_mode = bias_mode
         self.rescale_softmax_output = rescale_softmax_output
-        self.log_entropy = log_entropy
 
     def __call__(
         self,
@@ -173,10 +163,6 @@ class DistBiasedAttnProcessor:
         hidden_states = F.scaled_dot_product_attention(
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
-
-        if self.log_entropy:
-            entropy: FloatTensor = compute_attn_weight_entropy(hidden_states)
-            LOG.info(f'sigma %: %', f'{sigma:02f}', entropy)
 
         if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
             hidden_states = hidden_states * key_length_factor
