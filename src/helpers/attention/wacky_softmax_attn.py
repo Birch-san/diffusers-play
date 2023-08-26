@@ -3,7 +3,6 @@ import torch
 from torch import FloatTensor, BoolTensor
 from typing import Optional
 from enum import Enum, auto
-from logging import getLogger
 
 class SoftmaxMode(Enum):
     Original = auto()
@@ -11,8 +10,6 @@ class SoftmaxMode(Enum):
     Topk = auto()
     DenomTopk = auto()
     CrudeResample = auto()
-
-LOG = getLogger(__name__)
 
 class WackySoftmaxAttnProcessor:
     r"""
@@ -85,6 +82,7 @@ class WackySoftmaxAttnProcessor:
             upcast_attention=attn.upcast_attention,
             upcast_softmax=attn.upcast_softmax,
             scale=attn.scale,
+            heads=attn.heads,
             attention_mask=attention_mask,
             key_length_factor=key_length_factor,
             sigma=sigma,
@@ -114,6 +112,7 @@ class WackySoftmaxAttnProcessor:
         upcast_attention: bool,
         upcast_softmax: bool,
         scale: float,
+        heads: int,
         attention_mask: Optional[BoolTensor] = None,
         key_length_factor: Optional[float] = None,
         sigma: Optional[float] = None,
@@ -171,7 +170,9 @@ class WackySoftmaxAttnProcessor:
 
         if self.log_entropy:
             entropy: FloatTensor = compute_attn_weight_entropy(attention_probs)
-            LOG.info(f'sigma %: %', f'{sigma:02f}', entropy)
+            entropy = entropy.unflatten(0, sizes=(-1, heads)).mean(-1)
+            print(f'Entropy, sigma {sigma:02f}:')
+            print(entropy)
 
         if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
             attention_probs = attention_probs * key_length_factor
