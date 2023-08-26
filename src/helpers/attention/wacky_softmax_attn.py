@@ -3,6 +3,7 @@ import torch
 from torch import FloatTensor, BoolTensor
 from typing import Optional
 from enum import Enum, auto
+from logging import getLogger
 
 class SoftmaxMode(Enum):
     Original = auto()
@@ -10,6 +11,8 @@ class SoftmaxMode(Enum):
     Topk = auto()
     DenomTopk = auto()
     CrudeResample = auto()
+
+LOG = getLogger(__name__)
 
 class WackySoftmaxAttnProcessor:
     r"""
@@ -21,10 +24,17 @@ class WackySoftmaxAttnProcessor:
 
     softmax_mode: SoftmaxMode
     rescale_softmax_output: bool
+    log_entropy: bool
 
-    def __init__(self, softmax_mode: SoftmaxMode, rescale_softmax_output: bool) -> None:
+    def __init__(
+        self,
+        softmax_mode: SoftmaxMode,
+        rescale_softmax_output: bool,
+        log_entropy: bool,
+    ) -> None:
         self.softmax_mode = softmax_mode
         self.rescale_softmax_output = rescale_softmax_output
+        self.log_entropy = log_entropy
 
     def __call__(
         self,
@@ -158,6 +168,11 @@ class WackySoftmaxAttnProcessor:
                 case _:
                     raise ValueError(f'Never heard of softmax mode "{self.softmax_mode}"')
         del attention_scores
+
+        if self.log_entropy:
+            entropy: FloatTensor = compute_attn_weight_entropy(attention_probs)
+            LOG.info(f'sigma %: %', f'{sigma:02f}', entropy)
+
         if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
             attention_probs = attention_probs * key_length_factor
 
@@ -214,3 +229,10 @@ def resample_crude_softmax(x: torch.FloatTensor, k: int, dim=-1) -> torch.FloatT
     del diffs_resampled
     quotient = x_exp/diffs_exp_sum
     return quotient
+
+def compute_attn_weight_entropy(weights: FloatTensor) -> FloatTensor:
+    """
+    By Katherine Crowson.
+    """
+    entropy: FloatTensor = torch.sum(torch.special.entr(weights), dim=-1)
+    return entropy
