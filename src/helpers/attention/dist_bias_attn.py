@@ -3,10 +3,15 @@ from diffusers.models.attention import Attention
 from torch import FloatTensor, BoolTensor, arange
 from typing import Optional, NamedTuple
 import torch
+from enum import Enum, auto
 
 class Dimensions(NamedTuple):
     height: int
     width: int
+
+class BiasMode(Enum):
+    LogBias = auto()
+    NeighbourhoodMask = auto()
 
 def make_wacky_bias(size: Dimensions, factor: float, device="cpu") -> FloatTensor:
     h, w = size
@@ -23,6 +28,30 @@ def make_wacky_bias(size: Dimensions, factor: float, device="cpu") -> FloatTenso
 
     return bias
 
+# by Katherine Crowson
+def make_neighbourhood_mask(size: Dimensions, size_orig: Dimensions, device="cpu") -> torch.BoolTensor:
+    h, w = size
+    h_orig, w_orig = size_orig
+
+    h_ramp = torch.arange(h, device=device)
+    w_ramp = torch.arange(w, device=device)
+    h_pos, w_pos = torch.meshgrid(h_ramp, w_ramp, indexing="ij")
+
+    # Compute start_h and end_h
+    start_h = torch.clamp(h_pos - h_orig // 2, 0, h - h_orig)[..., None, None]
+    end_h = start_h + h_orig
+
+    # Compute start_w and end_w
+    start_w = torch.clamp(w_pos - w_orig // 2, 0, w - w_orig)[..., None, None]
+    end_w = start_w + w_orig
+
+    # Broadcast and create the mask
+    h_range = h_ramp.reshape(1, 1, h, 1)
+    w_range = w_ramp.reshape(1, 1, 1, w)
+    mask = (h_range >= start_h) & (h_range < end_h) & (w_range >= start_w) & (w_range < end_w)
+
+    return mask.view(h * w, h * w)
+
 class DistBiasedAttnProcessor:
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
@@ -30,10 +59,12 @@ class DistBiasedAttnProcessor:
     https://github.com/huggingface/diffusers/blob/3105c710ba16fa2cf54d8deb158099a4146da511/src/diffusers/models/attention_processor.py
     Once complete: this will bias attention as a function of key token's distance from query token.
     """
+    bias_mode: BiasMode
 
-    def __init__(self):
+    def __init__(self, bias_mode=BiasMode.LogBias):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
+        self.bias_mode = bias_mode
 
     def __call__(
         self,
@@ -90,15 +121,29 @@ class DistBiasedAttnProcessor:
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
         if is_self_attn and key_length_factor is not None and key_length_factor != 1.0:
-            if sigma > 4:
-                factor=1
-            else:
-                factor=-.1
             assert attention_mask is None
             # TODO: access aspect ratio. for now we just assume a square
             current_h = current_w = int(sequence_length**.5)
             current_size = Dimensions(height=current_h, width=current_w)
-            attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
+            if self.bias_mode is BiasMode.LogBias:
+                if sigma > 4:
+                    # during high sigmas (i.e. when composition is being decided):
+                    # bias self-attn towards distant tokens (global coherence)
+                    factor=1
+                else:
+                    # during low sigmas (i.e. when fine detail is being created):
+                    # bias self-attn slightly towards nearby tokens (local coherence)
+                    # this is pretty subtle; you could even consider just using attention_mask=None
+                    factor=-.1
+                attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
+            elif self.bias_mode is BiasMode.NeighbourhoodMask:
+                preferred_token_count = int(sequence_length/attn.key_length_factor)
+                preferred_h = preferred_w = int(preferred_token_count**.5)
+                preferred_size = Dimensions(height=preferred_h, width=preferred_w)
+                # make query tokens attend only to a local neighbourhood of key tokens, no larger than the token count used during training
+                attention_mask: torch.BoolTensor = make_neighbourhood_mask(size=current_size, size_orig=preferred_size, device=query.device)
+            else:
+                raise ValueError(f'Never heard of bias mode "{self.bias_mode}"')
             # broadcast over batch and head dims
             attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
 

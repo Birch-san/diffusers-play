@@ -33,7 +33,7 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
-from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor
+from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor, BiasMode
 from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
@@ -161,7 +161,7 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttn:
     unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.ScaledDPAttnDistBiased:
-    unet.set_attn_processor(DistBiasedAttnProcessor())
+    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias))
   case AttentionMode.ClassicWackySoftmax:
     unet.set_attn_processor(WackySoftmaxAttnProcessor())
   case AttentionMode.Xformers:
