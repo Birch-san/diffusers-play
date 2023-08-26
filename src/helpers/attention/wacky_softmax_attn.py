@@ -2,6 +2,14 @@ from diffusers.models.attention import Attention
 import torch
 from torch import FloatTensor, BoolTensor
 from typing import Optional
+from enum import Enum, auto
+
+class SoftmaxMode(Enum):
+    Original = auto()
+    Reimpl = auto()
+    Topk = auto()
+    DenomTopk = auto()
+    CrudeResample = auto()
 
 class WackySoftmaxAttnProcessor:
     r"""
@@ -11,6 +19,13 @@ class WackySoftmaxAttnProcessor:
     Once complete: this will fiddle with self-attention softmax, to try and make it do unspeakable things for out-of-distribution generation.
     """
 
+    softmax_mode: SoftmaxMode
+    rescale_softmax_output: bool
+
+    def __init__(self, softmax_mode: SoftmaxMode, rescale_softmax_output: bool) -> None:
+        self.softmax_mode = softmax_mode
+        self.rescale_softmax_output = rescale_softmax_output
+
     def __call__(
         self,
         attn: Attention,
@@ -18,6 +33,8 @@ class WackySoftmaxAttnProcessor:
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
+        key_length_factor: Optional[float] = None,
+        sigma: Optional[float] = None,
     ) -> FloatTensor:
         residual = hidden_states
 
@@ -59,6 +76,8 @@ class WackySoftmaxAttnProcessor:
             upcast_softmax=attn.upcast_softmax,
             scale=attn.scale,
             attention_mask=attention_mask,
+            key_length_factor=key_length_factor,
+            sigma=sigma,
         )
         hidden_states = torch.bmm(attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
@@ -86,6 +105,8 @@ class WackySoftmaxAttnProcessor:
         upcast_softmax: bool,
         scale: float,
         attention_mask: Optional[BoolTensor] = None,
+        key_length_factor: Optional[float] = None,
+        sigma: Optional[float] = None,
     ) -> FloatTensor:
         dtype = query.dtype
         if upcast_attention:
@@ -117,9 +138,79 @@ class WackySoftmaxAttnProcessor:
         if upcast_softmax:
             attention_scores = attention_scores.float()
 
-        attention_probs = attention_scores.softmax(dim=-1)
+        if key_length_factor is None or key_length_factor == 1.0 or self.softmax_mode in [SoftmaxMode.Original, SoftmaxMode.Reimpl]:
+            # normal attention
+            match self.softmax_mode:
+                case SoftmaxMode.Original:
+                    attention_probs = attention_scores.softmax(dim=-1)
+                case SoftmaxMode.Reimpl:
+                    attention_probs = softmax(attention_scores)
+        else:
+            key_tokens = attention_scores.size(-1)
+            preferred_token_count = int(key_tokens/key_length_factor)
+            match self.softmax_mode:
+                case SoftmaxMode.Topk:
+                    attention_probs = softmax_topk(attention_scores, k=preferred_token_count)
+                case SoftmaxMode.DenomTopk:
+                    attention_probs = softmax_denom_topk(attention_scores, k=preferred_token_count)
+                case SoftmaxMode.CrudeResample:
+                    attention_probs = resample_crude_softmax(attention_scores, k=preferred_token_count)
+                case _:
+                    raise ValueError(f'Never heard of softmax mode "{self.softmax_mode}"')
         del attention_scores
+        if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
+            attention_probs = attention_probs * key_length_factor
 
         attention_probs = attention_probs.to(dtype)
 
         return attention_probs
+
+def softmax(x: torch.FloatTensor, dim=-1) -> torch.FloatTensor:
+    """A normal softmax"""
+    maxes = x.max(dim, keepdim=True).values
+    diffs = x-maxes
+    del x, maxes
+    x_exp = diffs.exp()
+    del diffs
+    x_exp_sum = x_exp.sum(dim, keepdim=True)
+    quotient = x_exp/x_exp_sum
+    return quotient
+
+def softmax_denom_topk(x: torch.FloatTensor, k: int, dim=-1) -> torch.FloatTensor:
+    """
+    Softmax whose denominator sums only the topk scores
+    Sometimes fixes long-distance composition when generating larger-than-trained-distribution samples.
+    https://twitter.com/Birchlabs/status/1643020670912045057
+    """
+    maxes = x.max(dim, keepdim=True).values
+    diffs = x-maxes
+    del x, maxes
+    x_exp = diffs.exp()
+    del diffs
+    x_exp_sum = x_exp.topk(k=k, dim=dim).values.sum(dim, keepdim=True)
+    quotient = x_exp/x_exp_sum
+    return quotient
+
+def softmax_topk(x: FloatTensor, k: int, dim=-1) -> FloatTensor:
+    """
+    Softmax employed in topk attention
+    By Katherine Crowson
+    """
+    values, indices = torch.topk(x, k, dim=dim)
+    return torch.full_like(x, float("-inf")).scatter_(dim, indices, values).softmax(dim=dim)
+
+def resample_crude_softmax(x: torch.FloatTensor, k: int, dim=-1) -> torch.FloatTensor:
+    """
+    Softmax with a modified denominator. for each query token: resamples key dimension to size k; you can use this to increase/decrease denominator to the magnitude on which the model was trained.
+    I think the results were bad, but can't really remember.
+    """
+    maxes = x.max(dim, keepdim=True).values
+    diffs = x-maxes
+    del maxes
+    x_exp = diffs.exp()
+    diffs_resampled = torch.nn.functional.interpolate(diffs, scale_factor=k/diffs.size(-1), mode='nearest-exact', antialias=False)
+    del diffs
+    diffs_exp_sum = diffs_resampled.exp().sum(dim, keepdim=True)
+    del diffs_resampled
+    quotient = x_exp/diffs_exp_sum
+    return quotient

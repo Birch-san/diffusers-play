@@ -34,7 +34,7 @@ from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor, BiasMode
-from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor
+from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -163,7 +163,7 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttnDistBiased:
     unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias, rescale_softmax_output=False))
   case AttentionMode.ClassicWackySoftmax:
-    unet.set_attn_processor(WackySoftmaxAttnProcessor())
+    unet.set_attn_processor(WackySoftmaxAttnProcessor(softmax_mode=SoftmaxMode.DenomTopk, rescale_softmax_output=False))
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
@@ -298,7 +298,7 @@ unet.apply(tap_module)
 set_sigma_property = False
 pass_sigma_attn_kwarg = False
 attn_extra_kwargs: Dict[str, Any] = {}
-if attn_mode is AttentionMode.ScaledDPAttnDistBiased:
+if attn_mode is AttentionMode.ScaledDPAttnDistBiased or attn_mode is AttentionMode.ClassicWackySoftmax:
   attn_extra_kwargs['key_length_factor'] = self_attn_key_length_factor
   pass_sigma_attn_kwarg = True
 
