@@ -161,7 +161,7 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttn:
     unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.ScaledDPAttnDistBiased:
-    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias))
+    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias, rescale_softmax_output=False))
   case AttentionMode.ClassicWackySoftmax:
     unet.set_attn_processor(WackySoftmaxAttnProcessor())
   case AttentionMode.Xformers:

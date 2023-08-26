@@ -60,11 +60,13 @@ class DistBiasedAttnProcessor:
     Once complete: this will bias attention as a function of key token's distance from query token.
     """
     bias_mode: BiasMode
+    rescale_softmax_output: bool
 
-    def __init__(self, bias_mode=BiasMode.LogBias):
+    def __init__(self, bias_mode=BiasMode.LogBias, rescale_softmax_output=False):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
         self.bias_mode = bias_mode
+        self.rescale_softmax_output = rescale_softmax_output
 
     def __call__(
         self,
@@ -153,6 +155,8 @@ class DistBiasedAttnProcessor:
         hidden_states = F.scaled_dot_product_attention(
             query, key, value, attn_mask=attention_mask, dropout_p=0.0, is_causal=False
         )
+        if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
+            hidden_states = hidden_states * key_length_factor
 
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
