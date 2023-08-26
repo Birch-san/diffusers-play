@@ -14,11 +14,11 @@ class WackySoftmaxAttnProcessor:
     def __call__(
         self,
         attn: Attention,
-        hidden_states,
-        encoder_hidden_states=None,
-        attention_mask=None,
-        temb=None,
-    ):
+        hidden_states: FloatTensor,
+        encoder_hidden_states: Optional[FloatTensor] = None,
+        attention_mask: Optional[BoolTensor] = None,
+        temb: Optional[FloatTensor] = None,
+    ) -> FloatTensor:
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -86,7 +86,7 @@ class WackySoftmaxAttnProcessor:
         upcast_softmax: bool,
         scale: float,
         attention_mask: Optional[BoolTensor] = None,
-    ):
+    ) -> FloatTensor:
         dtype = query.dtype
         if upcast_attention:
             query = query.float()
