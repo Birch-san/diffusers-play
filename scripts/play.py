@@ -34,6 +34,7 @@ from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor
+from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -140,7 +141,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   variant=variant,
 ).to(device).eval()
 
-attn_mode = AttentionMode.ScaledDPAttnDistBiased
+attn_mode = AttentionMode.ClassicWackySoftmax
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Classic:
@@ -161,6 +162,8 @@ match(attn_mode):
     unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.ScaledDPAttnDistBiased:
     unet.set_attn_processor(DistBiasedAttnProcessor())
+  case AttentionMode.ClassicWackySoftmax:
+    unet.set_attn_processor(WackySoftmaxAttnProcessor())
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()

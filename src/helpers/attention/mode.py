@@ -16,5 +16,7 @@ class AttentionMode(Enum):
     ScaledDPAttn = auto()
     # fork of AttnProcessor2_0 with a custom self-attn bias to encourage long-distance associations
     ScaledDPAttnDistBiased = auto()
+    # fork of AttnProcessor with a custom softmax to try and bring the attention weights in-distribution when test-time context length does not match train-time
+    ClassicWackySoftmax = auto()
     # XFormersAttnProcessor
     Xformers = auto()
