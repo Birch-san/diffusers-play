@@ -1,5 +1,7 @@
 from diffusers.models.attention import Attention
 import torch
+from torch import FloatTensor, BoolTensor
+from typing import Optional
 
 class WackySoftmaxAttnProcessor:
     r"""
@@ -50,7 +52,14 @@ class WackySoftmaxAttnProcessor:
         key = attn.head_to_batch_dim(key)
         value = attn.head_to_batch_dim(value)
 
-        attention_probs = attn.get_attention_scores(query, key, attention_mask)
+        attention_probs = self.get_attention_scores(
+            query,
+            key,
+            upcast_attention=attn.upcast_attention,
+            upcast_softmax=attn.upcast_softmax,
+            scale=attn.scale,
+            attention_mask=attention_mask,
+        )
         hidden_states = torch.bmm(attention_probs, value)
         hidden_states = attn.batch_to_head_dim(hidden_states)
 
@@ -68,3 +77,49 @@ class WackySoftmaxAttnProcessor:
         hidden_states = hidden_states / attn.rescale_output_factor
 
         return hidden_states
+
+    def get_attention_scores(
+        self,
+        query: FloatTensor,
+        key: FloatTensor,
+        upcast_attention: bool,
+        upcast_softmax: bool,
+        scale: float,
+        attention_mask: Optional[BoolTensor] = None,
+    ):
+        dtype = query.dtype
+        if upcast_attention:
+            query = query.float()
+            key = key.float()
+
+        if attention_mask is None:
+            batch_x_heads, query_tokens, _ = query.shape
+            _, key_tokens, _ = key.shape
+            # expanding dims isn't strictly necessary (baddbmm supports broadcasting bias),
+            # but documents the expected shape without allocating any additional memory
+            attention_bias = torch.zeros(1, 1, 1, dtype=query.dtype, device=query.device).expand(
+                batch_x_heads, query_tokens, key_tokens
+            )
+            beta = 0
+        else:
+            attention_bias = attention_mask
+            beta = 1
+
+        attention_scores = torch.baddbmm(
+            attention_bias,
+            query,
+            key.transpose(-1, -2),
+            beta=beta,
+            alpha=scale,
+        )
+        del attention_bias
+
+        if upcast_softmax:
+            attention_scores = attention_scores.float()
+
+        attention_probs = attention_scores.softmax(dim=-1)
+        del attention_scores
+
+        attention_probs = attention_probs.to(dtype)
+
+        return attention_probs
