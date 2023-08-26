@@ -125,25 +125,26 @@ class DistBiasedAttnProcessor:
             # TODO: access aspect ratio. for now we just assume a square
             current_h = current_w = int(sequence_length**.5)
             current_size = Dimensions(height=current_h, width=current_w)
-            if self.bias_mode is BiasMode.LogBias:
-                if sigma > 4:
-                    # during high sigmas (i.e. when composition is being decided):
-                    # bias self-attn towards distant tokens (global coherence)
-                    factor=1
-                else:
-                    # during low sigmas (i.e. when fine detail is being created):
-                    # bias self-attn slightly towards nearby tokens (local coherence)
-                    # this is pretty subtle; you could even consider just using attention_mask=None
-                    factor=-.1
-                attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
-            elif self.bias_mode is BiasMode.NeighbourhoodMask:
-                preferred_token_count = int(sequence_length/attn.key_length_factor)
-                preferred_h = preferred_w = int(preferred_token_count**.5)
-                preferred_size = Dimensions(height=preferred_h, width=preferred_w)
-                # make query tokens attend only to a local neighbourhood of key tokens, no larger than the token count used during training
-                attention_mask: torch.BoolTensor = make_neighbourhood_mask(size=current_size, size_orig=preferred_size, device=query.device)
-            else:
-                raise ValueError(f'Never heard of bias mode "{self.bias_mode}"')
+            match self.bias_mode:
+                case BiasMode.LogBias:
+                    if sigma > 4:
+                        # during high sigmas (i.e. when composition is being decided):
+                        # bias self-attn towards distant tokens (global coherence)
+                        factor=1
+                    else:
+                        # during low sigmas (i.e. when fine detail is being created):
+                        # bias self-attn slightly towards nearby tokens (local coherence)
+                        # this is pretty subtle; you could even consider just using attention_mask=None
+                        factor=-.1
+                    attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
+                case BiasMode.NeighbourhoodMask:
+                    preferred_token_count = int(sequence_length/attn.key_length_factor)
+                    preferred_h = preferred_w = int(preferred_token_count**.5)
+                    preferred_size = Dimensions(height=preferred_h, width=preferred_w)
+                    # make query tokens attend only to a local neighbourhood of key tokens, no larger than the token count used during training
+                    attention_mask: torch.BoolTensor = make_neighbourhood_mask(size=current_size, size_orig=preferred_size, device=query.device)
+                case _:
+                    raise ValueError(f'Never heard of bias mode "{self.bias_mode}"')
             # broadcast over batch and head dims
             attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
 
