@@ -45,6 +45,8 @@ class WackySoftmaxAttnProcessor:
     ) -> FloatTensor:
         residual = hidden_states
 
+        is_self_attn = encoder_hidden_states is None
+
         if attn.spatial_norm is not None:
             hidden_states = attn.spatial_norm(hidden_states, temb)
 
@@ -83,6 +85,7 @@ class WackySoftmaxAttnProcessor:
             upcast_softmax=attn.upcast_softmax,
             scale=attn.scale,
             heads=attn.heads,
+            is_self_attn=is_self_attn,
             attention_mask=attention_mask,
             key_length_factor=key_length_factor,
             sigma=sigma,
@@ -113,6 +116,7 @@ class WackySoftmaxAttnProcessor:
         upcast_softmax: bool,
         scale: float,
         heads: int,
+        is_self_attn: bool,
         attention_mask: Optional[BoolTensor] = None,
         key_length_factor: Optional[float] = None,
         sigma: Optional[float] = None,
@@ -168,11 +172,11 @@ class WackySoftmaxAttnProcessor:
                     raise ValueError(f'Never heard of softmax mode "{self.softmax_mode}"')
         del attention_scores
 
-        if self.log_entropy:
+        if self.log_entropy and is_self_attn:
             entropy: FloatTensor = compute_attn_weight_entropy(attention_probs)
             entropy = entropy.unflatten(0, sizes=(-1, heads)).mean(-1)
-            print(f'Entropy, sigma {sigma:02f}:')
-            print(entropy)
+            # print just per-head entropy for final batch item (i.e. we expect that to be cond rather than uncond)
+            print(', '.join(['%.4f' % s.item() for s in entropy[-1]]))
 
         if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
             attention_probs = attention_probs * key_length_factor
