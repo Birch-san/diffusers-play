@@ -362,10 +362,10 @@ if compensate_variance:
       sigma, layer = key.split('/', 1)
       if sigma not in variance_ratios:
         variance_ratios[sigma] = {}
-      variance_ratios[sigma][layer] = (
+      variance_ratios[sigma][layer] = ((
         native_variances.get_tensor(key).to(torch_dtype) /
         ood_variances.get_tensor(key).to(torch_dtype)
-      ).to(device)
+      )**.5).to(device)
   def get_variance_scale(sigma: float, attn_key: str) -> FloatTensor:
     return variance_ratios[f'{sigma:.4f}'][attn_key]
   wacky_attn_processor.variance_comp = VarianceCompensation(
