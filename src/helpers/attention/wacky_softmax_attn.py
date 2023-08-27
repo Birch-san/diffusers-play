@@ -16,7 +16,7 @@ class IdentifyAttn(Protocol):
     def __call__(self, attn: Attention) -> str: ...
 
 class ReportVariance(Protocol):
-    def __call__(self, sigma: float, attn_key: str, variance: FloatTensor) -> str: ...
+    def __call__(self, sigma: float, attn_key: str, variance: FloatTensor) -> None: ...
 
 class GetVarianceScale(Protocol):
     def __call__(self, sigma: float, attn_key: str) -> FloatTensor: ...
@@ -159,7 +159,7 @@ class WackySoftmaxAttnProcessor:
 
         if self.variance_report is not None and is_self_attn:
             attn_key: str = self.variance_report.identify_attn(attn=attn)
-            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, attn.heads))[-1].var(-1)
+            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, attn.heads)).var(-1).mean(-1)
             self.variance_report.report_variance(sigma=sigma, attn_key=attn_key, variance=variance)
 
         # we limit to mid-high sigmas only, to not destroy so much fine detail (we are only trying to influence the composition stage)

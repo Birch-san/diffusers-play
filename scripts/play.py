@@ -23,9 +23,12 @@ import torch
 from torch import Tensor, FloatTensor, BoolTensor, LongTensor, no_grad, zeros, tensor, arange, linspace, lerp
 from torch.nn.functional import pad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
+from diffusers.models.attention import Attention
 from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0, SlicedAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
+from weakref import WeakKeyDictionary
+from safetensors.torch import save_file
 
 from helpers.attention.mode import AttentionMode
 from helpers.attention.multi_head_attention.to_mha import to_mha
@@ -34,7 +37,7 @@ from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor, BiasMode
-from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode
+from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode, VarianceReporting
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -63,7 +66,7 @@ from helpers.sample_interpolation.intersperse_linspace import intersperse_linspa
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
-from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, Any
+from typing import List, Generator, Iterable, Optional, Callable, Tuple, Dict, Any, TypedDict
 from PIL import Image
 import time
 import numpy as np
@@ -141,6 +144,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   variant=variant,
 ).to(device).eval()
 
+wacky_attn_processor: Optional[WackySoftmaxAttnProcessor] = None
 attn_mode = AttentionMode.ClassicWackySoftmax
 match(attn_mode):
   case AttentionMode.Standard: pass
@@ -163,7 +167,14 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttnDistBiased:
     unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias, rescale_softmax_output=False))
   case AttentionMode.ClassicWackySoftmax:
-    unet.set_attn_processor(WackySoftmaxAttnProcessor(softmax_mode=SoftmaxMode.Original, rescale_softmax_output=False, rescale_sim_variance=True, log_entropy=False, log_variance=False))
+    wacky_attn_processor = WackySoftmaxAttnProcessor(
+      softmax_mode=SoftmaxMode.Original,
+      rescale_softmax_output=False,
+      rescale_sim_variance=False,
+      log_entropy=False,
+      log_variance=False,
+    )
+    unet.set_attn_processor(wacky_attn_processor)
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
@@ -301,6 +312,41 @@ attn_extra_kwargs: Dict[str, Any] = {}
 if attn_mode is AttentionMode.ScaledDPAttnDistBiased or attn_mode is AttentionMode.ClassicWackySoftmax:
   attn_extra_kwargs['key_length_factor'] = self_attn_key_length_factor
   pass_sigma_attn_kwarg = True
+
+class RunningVariance(TypedDict):
+  sample_count: int
+  sum_of_variances: FloatTensor
+
+report_variance = True
+variances: Dict[float, Dict[str, RunningVariance]] = {}
+report_var_dir = 'variance'
+if report_variance:
+  assert attn_mode is AttentionMode.ClassicWackySoftmax
+  assert wacky_attn_processor is not None
+  os.makedirs(report_var_dir, exist_ok=True)
+
+  attn_to_id = WeakKeyDictionary[Attention, str]()
+  for name, module in unet.named_modules():
+    if isinstance(module, Attention):
+      attn_to_id[module] = name
+  def identify_attn(attn: Attention) -> str:
+    return attn_to_id[attn]
+  def report_variance_(sigma: float, attn_key: str, variance: FloatTensor) -> str:
+    if sigma not in variances:
+      variances[sigma] = {}
+    sample_count: int = variance.size(0)
+    sum_of_variances: FloatTensor = variance.sum(0)
+    if attn_key in variances[sigma]:
+      sample_count=variances[sigma][attn_key]['sample_count'] + sample_count
+      sum_of_variances=variances[sigma][attn_key]['sum_of_variances'] + sum_of_variances
+    variances[sigma][attn_key] = RunningVariance(
+      sample_count=sample_count,
+      sum_of_variances=sum_of_variances,
+    )
+  wacky_attn_processor.variance_report = VarianceReporting(
+    identify_attn=identify_attn,
+    report_variance=report_variance_,
+  )
 
 latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
@@ -655,6 +701,19 @@ with no_grad():
     if save_latents_enabled:
       for stem, sample_latents in zip(sample_stems, latents):
         torch.save(sample_latents, os.path.join(latents_path, f"{stem}.pt"))
+    
+    if report_variance:
+      report_var_dir = 'variance'
+      report_var_path = f'{report_var_dir}/{self_attn_key_length_factor:06.3f}.safetensors'
+      # variances_reduced: Dict[str, Dict[str, FloatTensor]] = {
+      #   f'{sig:.4f}': {
+      #     layer_name: running_var['sum_of_variances']/running_var['sample_count'] for layer_name, running_var in var_dict.items()
+      #   } for sig,var_dict in variances.items()
+      # }
+      variances_reduced: Dict[str, FloatTensor] = {
+        f'{sig:.4f}/{layer_name}': running_var['sum_of_variances']/running_var['sample_count'] for sig, var_dict in variances.items() for layer_name, running_var in var_dict.items()
+      }
+      save_file(tensors=variances_reduced, filename=report_var_path)
 
     if vae_page_vram:
       vae.to(device)
