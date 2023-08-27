@@ -168,6 +168,14 @@ class WackySoftmaxAttnProcessor:
             # this is significantly higher than the variance ratio that I measured in practice (1.0590 averaged over all heads):
             # https://gist.github.com/Birch-san/f394e5e069943fd5566b5e45a6888cd9
             attention_scores = attention_scores * 1.35
+        
+        # this is a more advanced version of rescale_sim_variance, which relies on actual measurements of per-head variance
+        # from an in-distribution and out-of-distribution sample, in order to multiply by an empirically-informed scale
+        if self.variance_comp is not None and is_self_attn:
+            attn_key: str = self.variance_comp.identify_attn(attn=attn)
+            variance_scales: FloatTensor = self.variance_comp.get_variance_scale(sigma=sigma, attn_key=attn_key)
+            attention_scores = attention_scores.unflatten(0, sizes=(-1, attn.heads)) * variance_scales.reshape(1, -1, 1, 1)
+            attention_scores = attention_scores.flatten(start_dim=0, end_dim=1)
 
         if self.log_variance and is_self_attn:
             # print just per-head variance for final batch item (which we expect to be cond rather than uncond)

@@ -28,6 +28,7 @@ from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0
 from diffusers.utils.import_utils import is_xformers_available
 from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
 from weakref import WeakKeyDictionary
+from safetensors import safe_open
 from safetensors.torch import save_file
 
 from helpers.attention.mode import AttentionMode
@@ -37,7 +38,7 @@ from helpers.attention.set_key_length_factor import make_set_key_length_factor
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor, BiasMode
-from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode, VarianceReporting
+from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode, VarianceReporting, VarianceCompensation
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -313,24 +314,26 @@ if attn_mode is AttentionMode.ScaledDPAttnDistBiased or attn_mode is AttentionMo
   attn_extra_kwargs['key_length_factor'] = self_attn_key_length_factor
   pass_sigma_attn_kwarg = True
 
+report_variance = False
+compensate_variance = True
+report_var_dir = 'variance'
+attn_to_id = WeakKeyDictionary[Attention, str]()
+def identify_attn(attn: Attention) -> str:
+  return attn_to_id[attn]
+if report_variance or compensate_variance:
+  assert attn_mode is AttentionMode.ClassicWackySoftmax
+  assert wacky_attn_processor is not None
+  os.makedirs(report_var_dir, exist_ok=True)
+  for name, module in unet.named_modules():
+    if isinstance(module, Attention):
+      attn_to_id[module] = name
+
 class RunningVariance(TypedDict):
   sample_count: int
   sum_of_variances: FloatTensor
 
-report_variance = True
 variances: Dict[float, Dict[str, RunningVariance]] = {}
-report_var_dir = 'variance'
 if report_variance:
-  assert attn_mode is AttentionMode.ClassicWackySoftmax
-  assert wacky_attn_processor is not None
-  os.makedirs(report_var_dir, exist_ok=True)
-
-  attn_to_id = WeakKeyDictionary[Attention, str]()
-  for name, module in unet.named_modules():
-    if isinstance(module, Attention):
-      attn_to_id[module] = name
-  def identify_attn(attn: Attention) -> str:
-    return attn_to_id[attn]
   def report_variance_(sigma: float, attn_key: str, variance: FloatTensor) -> str:
     if sigma not in variances:
       variances[sigma] = {}
@@ -346,6 +349,28 @@ if report_variance:
   wacky_attn_processor.variance_report = VarianceReporting(
     identify_attn=identify_attn,
     report_variance=report_variance_,
+  )
+
+variance_ratios: Dict[str, Dict[str, FloatTensor]] = {}
+if compensate_variance:
+  with (
+    safe_open(f'{report_var_dir}/1.000.safetensors', framework='pt', device='cpu') as native_variances,
+    safe_open(f'{report_var_dir}/{self_attn_key_length_factor:.3f}.safetensors', framework='pt', device='cpu') as ood_variances,
+  ):
+    assert native_variances.keys() == ood_variances.keys()
+    for key in native_variances.keys():
+      sigma, layer = key.split('/', 1)
+      if sigma not in variance_ratios:
+        variance_ratios[sigma] = {}
+      variance_ratios[sigma][layer] = (
+        native_variances.get_tensor(key).to(torch_dtype) /
+        ood_variances.get_tensor(key).to(torch_dtype)
+      ).to(device)
+  def get_variance_scale(sigma: float, attn_key: str) -> FloatTensor:
+    return variance_ratios[f'{sigma:.4f}'][attn_key]
+  wacky_attn_processor.variance_comp = VarianceCompensation(
+    identify_attn=identify_attn,
+    get_variance_scale=get_variance_scale,
   )
 
 latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
@@ -704,7 +729,7 @@ with no_grad():
     
     if report_variance:
       report_var_dir = 'variance'
-      report_var_path = f'{report_var_dir}/{self_attn_key_length_factor:06.3f}.safetensors'
+      report_var_path = f'{report_var_dir}/{self_attn_key_length_factor:.3f}.safetensors'
       # variances_reduced: Dict[str, Dict[str, FloatTensor]] = {
       #   f'{sig:.4f}': {
       #     layer_name: running_var['sum_of_variances']/running_var['sample_count'] for layer_name, running_var in var_dict.items()
