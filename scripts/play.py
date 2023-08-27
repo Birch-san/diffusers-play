@@ -163,7 +163,7 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttnDistBiased:
     unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias, rescale_softmax_output=False))
   case AttentionMode.ClassicWackySoftmax:
-    unet.set_attn_processor(WackySoftmaxAttnProcessor(softmax_mode=SoftmaxMode.DenomTopk, rescale_softmax_output=False))
+    unet.set_attn_processor(WackySoftmaxAttnProcessor(softmax_mode=SoftmaxMode.Original, rescale_softmax_output=False, rescale_sim_variance=True, log_entropy=False, log_variance=False))
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()

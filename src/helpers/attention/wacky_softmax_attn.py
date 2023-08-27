@@ -154,9 +154,12 @@ class WackySoftmaxAttnProcessor:
         )
         del attention_bias
 
-        if self.rescale_sim_variance and is_self_attn:
-            # a value that was found empirically to be the mean ratio by which we would want to increase variance of a 768x768 generation to match that of a 512x512 generation
-            attention_scores = attention_scores * 1.0590**.5
+        # we limit to mid-high sigmas only, to not destroy so much fine detail (we are only trying to influence the composition stage)
+        if self.rescale_sim_variance and is_self_attn and sigma > 3:
+            # scale factor that was found empirically to work (for generating 768x768 images, on a model which prefers 512x512 images).
+            # this is significantly higher than the variance ratio that I measured in practice (1.0590 averaged over all heads):
+            # https://gist.github.com/Birch-san/f394e5e069943fd5566b5e45a6888cd9
+            attention_scores = attention_scores * 1.35
 
         if self.log_variance and is_self_attn:
             # print just per-head variance for final batch item (which we expect to be cond rather than uncond)
