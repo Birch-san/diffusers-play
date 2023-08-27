@@ -21,6 +21,7 @@ class WackySoftmaxAttnProcessor:
 
     softmax_mode: SoftmaxMode
     rescale_softmax_output: bool
+    rescale_sim_variance: bool
     log_entropy: bool
     log_variance: bool
 
@@ -28,11 +29,13 @@ class WackySoftmaxAttnProcessor:
         self,
         softmax_mode: SoftmaxMode = SoftmaxMode.DenomTopk,
         rescale_softmax_output=False,
+        rescale_sim_variance=False,
         log_entropy=False,
         log_variance=False,
     ) -> None:
         self.softmax_mode = softmax_mode
         self.rescale_softmax_output = rescale_softmax_output
+        self.rescale_sim_variance = rescale_sim_variance
         self.log_entropy = log_entropy
         self.log_variance = log_variance
 
@@ -150,6 +153,10 @@ class WackySoftmaxAttnProcessor:
             alpha=scale,
         )
         del attention_bias
+
+        if self.rescale_sim_variance and is_self_attn:
+            # a value that was found empirically to be the mean ratio by which we would want to increase variance of a 768x768 generation to match that of a 512x512 generation
+            attention_scores = attention_scores * 1.0590**.5
 
         if self.log_variance and is_self_attn:
             # print just per-head variance for final batch item (which we expect to be cond rather than uncond)
