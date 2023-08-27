@@ -22,16 +22,19 @@ class WackySoftmaxAttnProcessor:
     softmax_mode: SoftmaxMode
     rescale_softmax_output: bool
     log_entropy: bool
+    log_variance: bool
 
     def __init__(
         self,
-        softmax_mode: SoftmaxMode,
-        rescale_softmax_output: bool,
-        log_entropy: bool,
+        softmax_mode: SoftmaxMode = SoftmaxMode.DenomTopk,
+        rescale_softmax_output=False,
+        log_entropy=False,
+        log_variance=False,
     ) -> None:
         self.softmax_mode = softmax_mode
         self.rescale_softmax_output = rescale_softmax_output
         self.log_entropy = log_entropy
+        self.log_variance = log_variance
 
     def __call__(
         self,
@@ -148,6 +151,11 @@ class WackySoftmaxAttnProcessor:
         )
         del attention_bias
 
+        if self.log_variance and is_self_attn:
+            # print just per-head variance for final batch item (which we expect to be cond rather than uncond)
+            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, heads))[-1].var(-1).mean(-1)
+            print(', '.join(['%.4f' % s.item() for s in variance]))
+
         if upcast_softmax:
             attention_scores = attention_scores.float()
 
@@ -173,10 +181,10 @@ class WackySoftmaxAttnProcessor:
         del attention_scores
 
         if self.log_entropy and is_self_attn:
-            entropy: FloatTensor = compute_attn_weight_entropy(attention_probs)
-            entropy = entropy.unflatten(0, sizes=(-1, heads)).mean(-1)
-            # print just per-head entropy for final batch item (i.e. we expect that to be cond rather than uncond)
-            print(', '.join(['%.4f' % s.item() for s in entropy[-1]]))
+            entropy: FloatTensor = compute_attn_weight_entropy(attention_probs.unflatten(0, sizes=(-1, heads))[-1])
+            entropy = entropy.mean(-1)
+            # print just per-head entropy for final batch item (which we expect to be cond rather than uncond)
+            print(', '.join(['%.4f' % s.item() for s in entropy]))
 
         if self.rescale_softmax_output and key_length_factor is not None and key_length_factor != 1.0:
             attention_probs = attention_probs * key_length_factor
