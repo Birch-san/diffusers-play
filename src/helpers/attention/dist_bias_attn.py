@@ -5,6 +5,7 @@ from typing import Optional, NamedTuple
 import torch
 from enum import Enum, auto
 from logging import getLogger
+from dataclasses import dataclass
 
 class Dimensions(NamedTuple):
     height: int
@@ -56,6 +57,7 @@ def make_neighbourhood_mask(size: Dimensions, size_orig: Dimensions, device="cpu
 
     return mask.view(h * w, h * w)
 
+@dataclass
 class DistBiasedAttnProcessor:
     r"""
     Processor for implementing scaled dot-product attention (enabled by default if you're using PyTorch 2.0).
@@ -63,18 +65,12 @@ class DistBiasedAttnProcessor:
     https://github.com/huggingface/diffusers/blob/3105c710ba16fa2cf54d8deb158099a4146da511/src/diffusers/models/attention_processor.py
     Once complete: this will bias attention as a function of key token's distance from query token.
     """
-    bias_mode: BiasMode
-    rescale_softmax_output: bool
+    bias_mode: BiasMode = BiasMode.LogBias
+    rescale_softmax_output: bool = False
 
-    def __init__(
-        self,
-        bias_mode=BiasMode.LogBias,
-        rescale_softmax_output=False,
-    ):
+    def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
             raise ImportError("AttnProcessor2_0 requires PyTorch 2.0, to use it, please upgrade PyTorch to 2.0.")
-        self.bias_mode = bias_mode
-        self.rescale_softmax_output = rescale_softmax_output
 
     def __call__(
         self,

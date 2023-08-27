@@ -1,8 +1,9 @@
 from diffusers.models.attention import Attention
 import torch
 from torch import FloatTensor, BoolTensor
-from typing import Optional
+from typing import Optional, Protocol
 from enum import Enum, auto
+from dataclasses import dataclass
 
 class SoftmaxMode(Enum):
     Original = auto()
@@ -11,6 +12,26 @@ class SoftmaxMode(Enum):
     DenomTopk = auto()
     CrudeResample = auto()
 
+class IdentifyAttn(Protocol):
+    def __call__(self, attn: Attention) -> str: ...
+
+class ReportVariance(Protocol):
+    def __call__(self, sigma: float, attn_key: str, variance: FloatTensor) -> str: ...
+
+class GetVarianceScale(Protocol):
+    def __call__(self, sigma: float, attn_key: str) -> FloatTensor: ...
+
+@dataclass
+class VarianceReporting:
+    identify_attn: IdentifyAttn
+    report_variance: ReportVariance
+
+@dataclass
+class VarianceCompensation:
+    identify_attn: IdentifyAttn
+    get_variance_scale: GetVarianceScale
+
+@dataclass
 class WackySoftmaxAttnProcessor:
     r"""
     Default processor for performing attention-related computations.
@@ -19,25 +40,13 @@ class WackySoftmaxAttnProcessor:
     Once complete: this will fiddle with self-attention softmax, to try and make it do unspeakable things for out-of-distribution generation.
     """
 
-    softmax_mode: SoftmaxMode
-    rescale_softmax_output: bool
-    rescale_sim_variance: bool
-    log_entropy: bool
-    log_variance: bool
-
-    def __init__(
-        self,
-        softmax_mode: SoftmaxMode = SoftmaxMode.DenomTopk,
-        rescale_softmax_output=False,
-        rescale_sim_variance=False,
-        log_entropy=False,
-        log_variance=False,
-    ) -> None:
-        self.softmax_mode = softmax_mode
-        self.rescale_softmax_output = rescale_softmax_output
-        self.rescale_sim_variance = rescale_sim_variance
-        self.log_entropy = log_entropy
-        self.log_variance = log_variance
+    softmax_mode: SoftmaxMode = SoftmaxMode.DenomTopk
+    rescale_softmax_output: bool = False
+    rescale_sim_variance: bool = False
+    log_entropy: bool = False
+    log_variance: bool = False
+    variance_comp: Optional[VarianceCompensation] = None
+    variance_report: Optional[VarianceReporting] = None
 
     def __call__(
         self,
@@ -87,10 +96,7 @@ class WackySoftmaxAttnProcessor:
         attention_probs = self.get_attention_scores(
             query,
             key,
-            upcast_attention=attn.upcast_attention,
-            upcast_softmax=attn.upcast_softmax,
-            scale=attn.scale,
-            heads=attn.heads,
+            attn=attn,
             is_self_attn=is_self_attn,
             attention_mask=attention_mask,
             key_length_factor=key_length_factor,
@@ -118,17 +124,14 @@ class WackySoftmaxAttnProcessor:
         self,
         query: FloatTensor,
         key: FloatTensor,
-        upcast_attention: bool,
-        upcast_softmax: bool,
-        scale: float,
-        heads: int,
+        attn: Attention,
         is_self_attn: bool,
         attention_mask: Optional[BoolTensor] = None,
         key_length_factor: Optional[float] = None,
         sigma: Optional[float] = None,
     ) -> FloatTensor:
         dtype = query.dtype
-        if upcast_attention:
+        if attn.upcast_attention:
             query = query.float()
             key = key.float()
 
@@ -150,9 +153,14 @@ class WackySoftmaxAttnProcessor:
             query,
             key.transpose(-1, -2),
             beta=beta,
-            alpha=scale,
+            alpha=attn.scale,
         )
         del attention_bias
+
+        if self.variance_report is not None and is_self_attn:
+            attn_key: str = self.variance_report.identify_attn(attn=attn)
+            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, attn.heads))[-1].var(-1)
+            self.variance_report.report_variance(sigma=sigma, attn_key=attn_key, variance=variance)
 
         # we limit to mid-high sigmas only, to not destroy so much fine detail (we are only trying to influence the composition stage)
         if self.rescale_sim_variance and is_self_attn and sigma > 3:
@@ -163,10 +171,10 @@ class WackySoftmaxAttnProcessor:
 
         if self.log_variance and is_self_attn:
             # print just per-head variance for final batch item (which we expect to be cond rather than uncond)
-            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, heads))[-1].var(-1).mean(-1)
+            variance: FloatTensor = attention_scores.unflatten(0, sizes=(-1, attn.heads))[-1].var(-1).mean(-1)
             print(', '.join(['%.4f' % s.item() for s in variance]))
 
-        if upcast_softmax:
+        if attn.upcast_softmax:
             attention_scores = attention_scores.float()
 
         if key_length_factor is None or key_length_factor == 1.0 or self.softmax_mode in [SoftmaxMode.Original, SoftmaxMode.Reimpl]:
@@ -191,7 +199,7 @@ class WackySoftmaxAttnProcessor:
         del attention_scores
 
         if self.log_entropy and is_self_attn:
-            entropy: FloatTensor = compute_attn_weight_entropy(attention_probs.unflatten(0, sizes=(-1, heads))[-1])
+            entropy: FloatTensor = compute_attn_weight_entropy(attention_probs.unflatten(0, sizes=(-1, attn.heads))[-1])
             entropy = entropy.mean(-1)
             # print just per-head entropy for final batch item (which we expect to be cond rather than uncond)
             print(', '.join(['%.4f' % s.item() for s in entropy]))
