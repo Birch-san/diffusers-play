@@ -729,12 +729,6 @@ with no_grad():
     
     if report_variance:
       report_var_dir = 'variance'
-      report_var_path = f'{report_var_dir}/{self_attn_key_length_factor:.3f}.safetensors'
-      # variances_reduced: Dict[str, Dict[str, FloatTensor]] = {
-      #   f'{sig:.4f}': {
-      #     layer_name: running_var['sum_of_variances']/running_var['sample_count'] for layer_name, running_var in var_dict.items()
-      #   } for sig,var_dict in variances.items()
-      # }
       variances_reduced: Dict[str, FloatTensor] = {
         f'{sig:.4f}/{layer_name}': running_var['sum_of_variances']/running_var['sample_count'] for sig, var_dict in variances.items() for layer_name, running_var in var_dict.items()
       }
