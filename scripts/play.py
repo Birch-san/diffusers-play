@@ -146,7 +146,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 ).to(device).eval()
 
 wacky_attn_processor: Optional[WackySoftmaxAttnProcessor] = None
-attn_mode = AttentionMode.ClassicWackySoftmax
+attn_mode = AttentionMode.ScaledDPAttnDistBiased
 match(attn_mode):
   case AttentionMode.Standard: pass
   case AttentionMode.Classic:
@@ -166,7 +166,7 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttn:
     unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.ScaledDPAttnDistBiased:
-    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias, rescale_softmax_output=False))
+    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.NeighbourhoodMask, rescale_softmax_output=False, canvas_edge_thickness=2))
   case AttentionMode.ClassicWackySoftmax:
     wacky_attn_processor = WackySoftmaxAttnProcessor(
       softmax_mode=SoftmaxMode.Original,
@@ -315,7 +315,7 @@ if attn_mode is AttentionMode.ScaledDPAttnDistBiased or attn_mode is AttentionMo
   pass_sigma_attn_kwarg = True
 
 report_variance = False
-compensate_variance = True
+compensate_variance = False
 report_var_dir = 'variance'
 attn_to_id = WeakKeyDictionary[Attention, str]()
 def identify_attn(attn: Attention) -> str:

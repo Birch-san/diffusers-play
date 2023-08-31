@@ -57,6 +57,20 @@ def make_neighbourhood_mask(size: Dimensions, size_orig: Dimensions, device="cpu
 
     return mask.view(h * w, h * w)
 
+def make_perimeter_mask(size: Dimensions, canvas_edge: Optional[int] = None, device='cpu') -> torch.BoolTensor:
+    h, w = size
+
+    h_ramp = torch.arange(h, device=device)
+    w_ramp = torch.arange(w, device=device)
+
+    # Broadcast and create the mask
+    h_range = h_ramp.reshape(h, 1)
+    w_range = w_ramp.reshape(1, w)
+    
+    mask: BoolTensor = (h_range < canvas_edge) | (h_range >= h-canvas_edge) | (w_range < canvas_edge) | (w_range >= w-canvas_edge)
+
+    return mask.flatten()
+
 @dataclass
 class DistBiasedAttnProcessor:
     r"""
@@ -67,6 +81,9 @@ class DistBiasedAttnProcessor:
     """
     bias_mode: BiasMode = BiasMode.LogBias
     rescale_softmax_output: bool = False
+    # suggested value of 2
+    canvas_edge_thickness: Optional[int] = None
+    neighbourhood_subtracts_canvas_edge: bool = True
 
     def __post_init__(self):
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -145,10 +162,22 @@ class DistBiasedAttnProcessor:
                     attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
                 case BiasMode.NeighbourhoodMask:
                     preferred_token_count = int(sequence_length/attn.key_length_factor)
+                    # TODO: access aspect ratio. for now we just assume a square
                     preferred_h = preferred_w = int(preferred_token_count**.5)
+
+                    # if we are using LM-Infinite mode: let's attend to canvas edge, at the expense of attending to a smaller local neighbourhood
+                    if self.canvas_edge_thickness is not None and self.neighbourhood_subtracts_canvas_edge:
+                        preferred_h = max(0, preferred_h-self.canvas_edge_thickness*2)
+                        preferred_w = max(0, preferred_w-self.canvas_edge_thickness*2)
+                            
                     preferred_size = Dimensions(height=preferred_h, width=preferred_w)
-                    # make query tokens attend only to a local neighbourhood of key tokens, no larger than the token count used during training
-                    attention_mask: torch.BoolTensor = make_neighbourhood_mask(size=current_size, size_orig=preferred_size, device=query.device)
+                    attention_mask: BoolTensor = make_neighbourhood_mask(size=current_size, size_orig=preferred_size, device=query.device)
+
+                    # LM-Infinite mode
+                    # https://arxiv.org/abs/2308.16137
+                    if self.canvas_edge_thickness is not None:
+                        perimeter_mask: BoolTensor = make_perimeter_mask(size=current_size, canvas_edge=self.canvas_edge_thickness, device=query.device)
+                        attention_mask |= perimeter_mask
                 case _:
                     raise ValueError(f'Never heard of bias mode "{self.bias_mode}"')
             # broadcast over batch and head dims
