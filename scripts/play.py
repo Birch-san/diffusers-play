@@ -39,6 +39,7 @@ from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.dist_bias_attn import DistBiasedAttnProcessor, BiasMode
 from helpers.attention.wacky_softmax_attn import WackySoftmaxAttnProcessor, SoftmaxMode, VarianceReporting, VarianceCompensation
+from helpers.attention.logit_scaling_attn import LogitScalingAttnProcessor
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -146,6 +147,7 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 ).to(device).eval()
 
 wacky_attn_processor: Optional[WackySoftmaxAttnProcessor] = None
+logit_scaling_attn_processor: Optional[LogitScalingAttnProcessor] = None
 attn_mode = AttentionMode.ScaledDPAttnDistBiased
 match(attn_mode):
   case AttentionMode.Standard: pass
@@ -176,6 +178,9 @@ match(attn_mode):
       log_variance=False,
     )
     unet.set_attn_processor(wacky_attn_processor)
+  case AttentionMode.LogitScaled:
+    logit_scaling_attn_processor = LogitScalingAttnProcessor()
+    unet.set_attn_processor(logit_scaling_attn_processor)
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()

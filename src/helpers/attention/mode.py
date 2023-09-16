@@ -18,5 +18,7 @@ class AttentionMode(Enum):
     ScaledDPAttnDistBiased = auto()
     # fork of AttnProcessor with a custom softmax to try and bring the attention weights in-distribution when test-time context length does not match train-time
     ClassicWackySoftmax = auto()
+    # fork of AttnProcessor2_0 which scales self-attention logits when query length is OOD, to output attention probabilities with entropy closer to original distribution.
+    LogitScaled = auto()
     # XFormersAttnProcessor
     Xformers = auto()
