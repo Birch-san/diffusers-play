@@ -2,6 +2,7 @@ from torch import FloatTensor, BoolTensor
 import torch.nn.functional as F
 from diffusers.models.attention import Attention
 from typing import Optional
+import math
 
 class LogitScalingAttnProcessor:
     r"""
@@ -25,9 +26,11 @@ class LogitScalingAttnProcessor:
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
-        self_attn_logit_scale_factor: Optional[float] = None,
+        self_attn_key_length_factor: Optional[float] = None,
     ) -> FloatTensor:
         residual = hidden_states
+
+        assert self_attn_key_length_factor is not None
 
         is_self_attn = encoder_hidden_states is None
 
@@ -70,6 +73,9 @@ class LogitScalingAttnProcessor:
 
         key = key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         value = value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
+
+        train_key_len = int(sequence_length / self_attn_key_length_factor)
+        self_attn_logit_scale_factor: float = math.log(sequence_length, train_key_len) ** .5
 
         scale = attn.scale*self_attn_logit_scale_factor if is_self_attn else attn.scale
 

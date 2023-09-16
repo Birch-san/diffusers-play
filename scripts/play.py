@@ -310,9 +310,6 @@ set_key_length_factor: TapAttn = make_set_key_length_factor(
 tap_module: TapModule = tap_attn_to_tap_module(set_key_length_factor)
 unet.apply(tap_module)
 
-latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
-latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
-
 # consider set_sigma_property deprecated; prefer passing args to attn processor, since this can be done without modifying diffusers library
 set_sigma_property = False
 pass_sigma_attn_kwarg = False
@@ -322,10 +319,8 @@ if attn_mode is AttentionMode.ScaledDPAttnDistBiased or attn_mode is AttentionMo
   pass_sigma_attn_kwarg = True
   filename_qualifier=f'science.{self_attn_key_length_factor:06.3f}'
 elif attn_mode is AttentionMode.LogitScaled:
-  # self_attn_logit_scale_factor_jin_et_al = math.log(height*width, trained_height*trained_width) ** .5
-  self_attn_logit_scale_factor_jin_et_al = math.log(height*width/latent_scale_factor**2, trained_height*trained_width/latent_scale_factor**2) ** .5
-  attn_extra_kwargs['self_attn_logit_scale_factor'] = self_attn_logit_scale_factor_jin_et_al
-  filename_qualifier=f"logit_scaled.{self_attn_logit_scale_factor_jin_et_al}"
+  attn_extra_kwargs['self_attn_key_length_factor'] = self_attn_key_length_factor
+  filename_qualifier=f"logit_scaled.{self_attn_key_length_factor}"
 else:
   filename_qualifier=''
 
@@ -387,6 +382,9 @@ if compensate_variance:
     identify_attn=identify_attn,
     get_variance_scale=get_variance_scale,
   )
+
+latent_scale_factor = 2 ** (len(vae.config.block_out_channels) - 1) # 8
+latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
 # img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')
