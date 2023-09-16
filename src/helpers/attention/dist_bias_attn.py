@@ -150,15 +150,18 @@ class DistBiasedAttnProcessor:
             current_size = Dimensions(height=current_h, width=current_w)
             match self.bias_mode:
                 case BiasMode.LogBias:
-                    if sigma > 4:
-                        # during high sigmas (i.e. when composition is being decided):
-                        # bias self-attn towards distant tokens (global coherence)
-                        factor=1
+                    if key_length_factor > 1:
+                        if sigma > 4:
+                            # during high sigmas (i.e. when composition is being decided):
+                            # bias self-attn towards distant tokens (global coherence)
+                            factor=1
+                        else:
+                            # during low sigmas (i.e. when fine detail is being created):
+                            # bias self-attn slightly towards nearby tokens (local coherence)
+                            # this is pretty subtle; you could even consider just using attention_mask=None
+                            factor=-.1
                     else:
-                        # during low sigmas (i.e. when fine detail is being created):
-                        # bias self-attn slightly towards nearby tokens (local coherence)
-                        # this is pretty subtle; you could even consider just using attention_mask=None
-                        factor=-.1
+                        factor=1
                     attention_mask: FloatTensor = make_wacky_bias(size=current_size, factor=factor, device=query.device)
                 case BiasMode.NeighbourhoodMask:
                     preferred_token_count = int(sequence_length/attn.key_length_factor)

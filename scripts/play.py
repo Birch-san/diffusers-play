@@ -169,7 +169,8 @@ match(attn_mode):
   case AttentionMode.ScaledDPAttn:
     unet.set_attn_processor(AttnProcessor2_0())
   case AttentionMode.ScaledDPAttnDistBiased:
-    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.NeighbourhoodMask, rescale_softmax_output=False, canvas_edge_thickness=2))
+    # unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.NeighbourhoodMask, rescale_softmax_output=False, canvas_edge_thickness=4, neighbourhood_subtracts_canvas_edge=True))
+    unet.set_attn_processor(DistBiasedAttnProcessor(bias_mode=BiasMode.LogBias))
   case AttentionMode.ClassicWackySoftmax:
     wacky_attn_processor = WackySoftmaxAttnProcessor(
       softmax_mode=SoftmaxMode.Original,
