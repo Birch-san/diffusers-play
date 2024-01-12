@@ -25,7 +25,7 @@ from torch.nn.functional import pad
 from diffusers.models import UNet2DConditionModel, AutoencoderKL
 from diffusers.models.attention_processor import AttnProcessor, AttnProcessor2_0, SlicedAttnProcessor
 from diffusers.utils.import_utils import is_xformers_available
-from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras, sample_dpmpp_2m
+from k_diffusion.sampling import BrownianTreeNoiseSampler, get_sigmas_karras#, sample_dpmpp_2m
 
 from helpers.attention.mode import AttentionMode
 from helpers.attention.multi_head_attention.to_mha import to_mha
@@ -57,6 +57,7 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
+from helpers.sampling import sample_dpmpp_2m
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
