@@ -79,11 +79,11 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
                     phi_2 = torch.expm1(-h) + h
                 else:
                     phi_2 = torch.expm1(-h_eta) + h_eta
-                ttm_x = sigma_fn(h_eta) * x + phi_1 * denoised + phi_2 * denoised_prime
+                denoised_i = sigma_fn(h_eta) * x + phi_1 * denoised + phi_2 * denoised_prime
 
                 if ttm_eta:
                     phi_1_noise = torch.sqrt(-torch.expm1(-2 * h * ttm_eta))
-                    ttm_x = ttm_x + ttm_noise_sampler(sigmas[i], sigmas[i + 1]) * sigmas[i + 1] * phi_1_noise * ttm_s_noise
+                    denoised_i = denoised_i + ttm_noise_sampler(sigmas[i], sigmas[i + 1]) * sigmas[i + 1] * phi_1_noise * ttm_s_noise
             else:
                 raise ValueError(f"Unsupported warmup type '{warmup_lms}'. Supported values are: ['2s', 'jvp']")
         elif sigmas[i + 1] == 0 or old_denoised is None or sigmas[i] <= order2_until:
@@ -92,10 +92,6 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
             h_last = t - t_fn(sigmas[i - 1])
             r = h_last / h
             denoised_i = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_denoised
-        if ttm_x is None:
-            x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_i
-        else:
-            x = ttm_x
-            ttm_x = None
+        x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_i
         old_denoised = denoised
     return x
