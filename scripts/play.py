@@ -68,6 +68,8 @@ import numpy as np
 from einops import repeat as einops_repeat
 
 half = True
+# enable this to prevent NaN if your sampler relies on forward-mode autodiff
+half_means_bf16 = False
 
 # hakurei/waifu-diffusion
 # can refer to both 1.3 and 1.4, depending on commit
@@ -80,7 +82,7 @@ revision=None
 torch_dtype=None
 if half:
   revision='fp16'
-  torch_dtype=torch.float16
+  torch_dtype=torch.bfloat16 if half_means_bf16 else torch.float16
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 

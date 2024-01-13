@@ -1,7 +1,9 @@
 import torch
-from torch import enable_grad
+from torch import enable_grad, atleast_1d
+from torch.backends.cuda import sdp_kernel
 from tqdm import trange
 from typing import Optional, Literal
+from k_diffusion.sampling import to_d
 
 # from k-diffusion
 # https://github.com/crowsonkb/k-diffusion/blob/cc49cf6182284e577e896943f8e29c7c9d1a7f2c/k_diffusion/sampling.py#L585
@@ -48,12 +50,21 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
                 x_2 = (sigma_fn(s) / sigma_fn(t)) * x - (-h * r).expm1() * denoised
                 denoised_i = model(x_2, sigma_fn(s) * s_in, **extra_args)
             elif warmup_lms == 'jvp':
-                with enable_grad():
-                    # TODO: use forward-mode autodiff to get second derivative of ODE
-                    #       like in sample_ttm_jvp:
-                    # https://github.com/Birch-san/sdxl-play/blob/edf5f53999c5f49a687f151292129756de373f4f/src/sample_ttm.py#L45
-                    #       (note, sample_ttm approach should work too, but may return None depending on pytorch compatibility)
-                    raise RuntimeError("jvp warmup not yet implemented.")
+                # use forward-mode autodiff to get second derivative of ODE
+                # like in sample_ttm_jvp:
+                # https://github.com/Birch-san/sdxl-play/blob/edf5f53999c5f49a687f151292129756de373f4f/src/sample_ttm.py#L45
+                sigma = atleast_1d(sigmas[i])
+                eps = to_d(x, sigma, denoised)
+                with enable_grad(), sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True):
+                    # TODO: add a forward hook to every LayerNorm to cast tangents to the same type as primal,
+                    #   otherwise the matmuls after each LayerNorm will complain about the tangent dtype's being f32.
+                    #   currently my workaround is that I locally modified the code inside diffusers.
+                    # import torch.autograd.forward_ad as fwAD
+                    # u_norm_hidden_states = fwAD.unpack_dual(norm_hidden_states)
+                    # if u_norm_hidden_states.tangent is not None and u_norm_hidden_states.tangent.dtype != u_norm_hidden_states.primal.dtype:
+                    #   norm_hidden_states = fwAD.make_dual(u_norm_hidden_states.primal, u_norm_hidden_states.tangent.to(u_norm_hidden_states.primal.dtype))
+                    _, denoised_prime = torch.func.jvp(model, (x, sigma), (eps * -sigma, -sigma))
+                raise RuntimeError("Not finished implementing")
             else:
                 raise ValueError(f"Unsupported warmup type '{warmup_lms}'. Supported values are: ['2s', 'jvp']")
         elif sigmas[i + 1] == 0 or old_denoised is None or sigmas[i] <= order2_until:
