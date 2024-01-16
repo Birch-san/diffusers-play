@@ -32,6 +32,8 @@ from helpers.attention.multi_head_attention.to_mha import to_mha
 from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
+from helpers.attention.visit_attns import AttnAcceptor, visit_attns
+from helpers.attention.demote_attn import to_neighbourhood_attn, to_null_attn
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -57,6 +59,7 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
+from functools import partial
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
@@ -159,6 +162,12 @@ match(attn_mode):
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
+
+limit_global_self_attn = True
+if limit_global_self_attn:
+  attn_acceptor: AttnAcceptor = to_null_attn
+  # attn_acceptor: AttnAcceptor = partial(to_neighbourhood_attn, kernel_size=7)
+  visit_attns(unet, levels=1, attn_acceptor=attn_acceptor)
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
