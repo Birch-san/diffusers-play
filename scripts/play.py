@@ -57,7 +57,7 @@ from helpers.inference_spec.latent_maker import LatentMaker, MakeLatentsStrategy
 from helpers.inference_spec.latent_maker_seed_strategy import SeedLatentMaker
 from helpers.sample_interpolation.make_in_between import make_inbetween
 from helpers.sample_interpolation.intersperse_linspace import intersperse_linspace
-from helpers.sampling import sample_dpmpp_2m
+from helpers.sampling import sample_dpmpp_2m, fix_module_fwad_ctx
 from itertools import chain, repeat, cycle, pairwise
 from easing_functions import CubicEaseInOut
 
@@ -596,13 +596,17 @@ with no_grad():
       callback = None
 
     tic = time.perf_counter()
-    latents: Tensor = sample_dpmpp_2m(
-      denoiser,
-      latents,
-      sigmas,
-      # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
-      callback=callback,
-    ).to(vae_dtype)
+    with fix_module_fwad_ctx(denoiser.denoiser.inner_model):
+      latents: Tensor = sample_dpmpp_2m(
+        denoiser,
+        latents,
+        sigmas,
+        # noise_sampler=noise_sampler, # you can only pass noise sampler to ancestral samplers
+        callback=callback,
+        # order2_until=sigmas[-3],
+        warmup_lms='ttm',
+        # ttm_eta=0.5,
+      ).to(vae_dtype)
     del denoiser
     if device.type == 'cuda':
       torch.cuda.empty_cache()

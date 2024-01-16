@@ -1,9 +1,38 @@
+from contextlib import contextmanager
 import torch
-from torch import enable_grad, atleast_1d
+import torch.autograd.forward_ad as fwAD
+from torch import enable_grad, atleast_1d, FloatTensor
+from torch.utils.hooks import RemovableHandle
+from torch.nn import Module, LayerNorm
 from torch.backends.cuda import sdp_kernel
 from tqdm import trange
-from typing import Optional, Literal
+from typing import Optional, Literal, Callable, List, Tuple
 from k_diffusion.sampling import to_d, default_noise_sampler
+
+def fix_tangent_dtype(ln: LayerNorm, args: Tuple[FloatTensor], output: FloatTensor) -> FloatTensor:
+    u_output = fwAD.unpack_dual(output)
+    if u_output.tangent is not None and u_output.tangent.dtype != u_output.primal.dtype:
+      return fwAD.make_dual(u_output.primal, u_output.tangent.to(u_output.primal.dtype))
+
+def fix_layernorm_fwad(ln: LayerNorm) -> RemovableHandle:
+    return ln.register_forward_hook(fix_tangent_dtype)
+    
+def fix_module_fwad(module: Module) -> Callable[[], None]:
+    handles: List[RemovableHandle] = []
+    for module in module.modules():
+        if isinstance(module, LayerNorm):
+            handle: RemovableHandle = fix_layernorm_fwad(module)
+            handles.append(handle)
+    def remove_handles() -> None:
+        for handle in handles:
+            handle.remove()
+    return remove_handles
+
+@contextmanager
+def fix_module_fwad_ctx(module: Module):
+    remove_hooks: Callable[[], None] = fix_module_fwad(module)
+    yield
+    remove_hooks()
 
 # from k-diffusion
 # https://github.com/crowsonkb/k-diffusion/blob/cc49cf6182284e577e896943f8e29c7c9d1a7f2c/k_diffusion/sampling.py#L585
@@ -63,13 +92,6 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
                 sigma = atleast_1d(sigmas[i])
                 eps = to_d(x, sigma, denoised)
                 with enable_grad(), sdp_kernel(enable_flash=False, enable_mem_efficient=False, enable_math=True):
-                    # TODO: add a forward hook to every LayerNorm to cast tangents to the same type as primal,
-                    #   otherwise the matmuls after each LayerNorm will complain about the tangent dtype's being f32.
-                    #   currently my workaround is that I locally modified the code inside diffusers.
-                    # import torch.autograd.forward_ad as fwAD
-                    # u_norm_hidden_states = fwAD.unpack_dual(norm_hidden_states)
-                    # if u_norm_hidden_states.tangent is not None and u_norm_hidden_states.tangent.dtype != u_norm_hidden_states.primal.dtype:
-                    #   norm_hidden_states = fwAD.make_dual(u_norm_hidden_states.primal, u_norm_hidden_states.tangent.to(u_norm_hidden_states.primal.dtype))
                     _, denoised_prime = torch.func.jvp(model, (x, sigma), (eps * -sigma, -sigma))
                 
                 phi_1 = -torch.expm1(-h_eta)
