@@ -34,6 +34,7 @@ from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.visit_attns import AttnAcceptor, visit_attns
 from helpers.attention.demote_attn import to_neighbourhood_attn, to_null_attn
+from helpers.attention.natten_attn import Dimension
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -70,6 +71,8 @@ import numpy as np
 from einops import repeat as einops_repeat
 
 half = True
+# enable this to prevent NaN if your sampler relies on forward-mode autodiff, or if you are using NATTEN self-attention
+half_means_bf16 = True
 
 # hakurei/waifu-diffusion
 # can refer to both 1.3 and 1.4, depending on commit
@@ -82,7 +85,7 @@ revision=None
 torch_dtype=None
 if half:
   revision='fp16'
-  torch_dtype=torch.float16
+  torch_dtype=torch.bfloat16 if half_means_bf16 else torch.float16
 device_type: DeviceLiteral = get_device_type()
 device = torch.device(device_type)
 
@@ -162,12 +165,6 @@ match(attn_mode):
   case AttentionMode.Xformers:
     assert is_xformers_available()
     unet.enable_xformers_memory_efficient_attention()
-
-limit_global_self_attn = True
-if limit_global_self_attn:
-  attn_acceptor: AttnAcceptor = to_null_attn
-  # attn_acceptor: AttnAcceptor = partial(to_neighbourhood_attn, kernel_size=7)
-  visit_attns(unet, levels=1, attn_acceptor=attn_acceptor)
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
 sampling_dtype: torch.dtype = torch.float32
@@ -280,6 +277,14 @@ match(model_name):
 
 latent_scale_factor = 8
 latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, width // latent_scale_factor)
+
+limit_global_self_attn = True
+if limit_global_self_attn:
+  # attn_acceptor: AttnAcceptor = to_null_attn
+  sample_size = Dimension(height=latents_shape.height, width=latents_shape.width)
+  attn_acceptor: AttnAcceptor = partial(to_neighbourhood_attn, sample_size=sample_size, kernel_size=33)
+  visit_receipt = visit_attns(unet, levels=1, attn_acceptor=attn_acceptor)
+  print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
 # img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')
