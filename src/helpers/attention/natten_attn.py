@@ -3,7 +3,8 @@ import torch
 from torch import FloatTensor, BoolTensor
 from typing import Optional, NamedTuple
 from einops import rearrange
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import math
 
 try:
     import natten
@@ -24,11 +25,31 @@ class NattenAttnProcessor:
     """
     kernel_size: int
     # tell me on construction what size to expect, so I can unflatten the sequence into height and width again
-    expect_size: int
+    expect_size: Dimension
+    has_fused_scale_factor: bool = False
+    # our key size (the kernel area) is smaller than the key size used in training (entire canvas),
+    # so the attention softmax is dividing by fewer elements and thus elements become too large / have too much variance
+    # in other words, the softmax outputs too sharp a distribution of probabilities (closer to a one-hot vector).
+    # we can multiply by a quotient smaller than 1, to compensate. this reduces logit variance,
+    # makes attn probabilities more diffuse, more entropic, to try to match the training distribution more closely.
+    # the only reason this defaults to False is because it's obscure. it's principled and seems to help, so you should turn it on.
+    scale_attn_entropy: bool = False
+    entropy_scale: float = field(init=False)
 
     def __post_init__(self):
         if natten is None:
             raise ModuleNotFoundError("natten is required for neighborhood attention")
+        # Training-free Diffusion Model Adaptation for Variable-Sized Text-to-Image Synthesis
+        # https://arxiv.org/abs/2306.08645
+        # instead of scaling logits by:
+        #   self.scale
+        # we scale by:
+        #   self.scale * log(inference_key_len, train_key_len)**.5
+        # if your train/inference key lengths can be as short as 1, then clamp key lengths to avoid an entropy scale of 0 or infinite
+        #                log(max(inference_key_len, 2), max(train_key_len, 2))**.5
+        train_key_len = self.expect_size.height * self.expect_size.width
+        inference_key_len = self.kernel_size**2
+        self.entropy_scale = math.log(inference_key_len, train_key_len)**.5
 
     def __call__(
         self,
@@ -57,7 +78,14 @@ class NattenAttnProcessor:
 
         qkv = attn.qkv(hidden_states)
         # assumes MHA (as opposed to GQA)
+        # assumes that the scale factor has already been fused into the weights
         q, k, v = rearrange(qkv, "n (h w) (t nh e) -> t n nh h w e", t=3, nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width)
+
+        if self.scale_attn_entropy or not self.has_fused_scale_factor:
+            scale = 1. if self.has_fused_scale_factor else attn.scale
+            if self.scale_attn_entropy:
+                scale *= self.entropy_scale
+            q *= scale
 
         qk = natten.functional.natten2dqk(q, k, self.kernel_size, 1)
         a = torch.softmax(qk, dim=-1)

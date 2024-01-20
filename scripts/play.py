@@ -282,7 +282,7 @@ limit_global_self_attn = True
 if limit_global_self_attn:
   # attn_acceptor: AttnAcceptor = to_null_attn
   sample_size = Dimension(height=latents_shape.height, width=latents_shape.width)
-  attn_acceptor: AttnAcceptor = partial(to_neighbourhood_attn, sample_size=sample_size, kernel_size=33)
+  attn_acceptor: AttnAcceptor = partial(to_neighbourhood_attn, sample_size=sample_size, kernel_size=33, scale_attn_entropy=True)
   visit_receipt = visit_attns(unet, levels=1, attn_acceptor=attn_acceptor)
   print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
