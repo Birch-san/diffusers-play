@@ -3,7 +3,9 @@ from torch import FloatTensor, BoolTensor
 from typing import Optional
 from einops import rearrange
 
-class NullAttnProcessor:
+from .attn_processor import AttnProcessor
+
+class NullAttnProcessor(AttnProcessor):
     r"""
     Processor for skipping SDP attn, for cases where we suspect it's learned to drop out the token-mixing capability
     Based on:
@@ -17,6 +19,7 @@ class NullAttnProcessor:
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
+        **kwargs,
     ):
         residual = hidden_states
 
