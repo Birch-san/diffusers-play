@@ -280,7 +280,7 @@ latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, wi
 
 limit_global_self_attn = True
 if limit_global_self_attn:
-  # attn_acceptor: AttnAcceptor = to_null_attn
+  # attn_acceptor: AttnAcceptor = partial(to_null_attn, delete_qk=True)
   sample_size = Dimension(height=latents_shape.height, width=latents_shape.width)
   attn_acceptor: AttnAcceptor = partial(
     to_neighbourhood_attn,

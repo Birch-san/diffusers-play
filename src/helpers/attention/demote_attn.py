@@ -3,8 +3,9 @@ from .null_attn import NullAttnProcessor
 from .natten_attn import NattenAttnProcessor, Dimension
 from .qkv_fusion import fuse_qkv as fuse_qkv_
 
-def to_null_attn(attn: Attention, level: int) -> None:
-  del attn.to_q, attn.to_k
+def to_null_attn(attn: Attention, level: int, delete_qk=False) -> None:
+  if delete_qk:
+    del attn.to_q, attn.to_k
   null_attn = NullAttnProcessor()
   attn.set_processor(null_attn)
 
@@ -31,6 +32,7 @@ def to_neighbourhood_attn(
     kernel_size=kernel_size,
     expect_size=downsampled_size,
     has_fused_scale_factor=fuse_qkv and qkv_fusion_fuses_scale_factor,
+    has_fused_qkv=fuse_qkv,
     scale_attn_entropy=scale_attn_entropy,
   )
   attn.set_processor(natten)
