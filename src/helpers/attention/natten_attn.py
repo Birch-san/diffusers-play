@@ -27,6 +27,7 @@ class NattenAttnProcessor:
     # tell me on construction what size to expect, so I can unflatten the sequence into height and width again
     expect_size: Dimension
     has_fused_scale_factor: bool = False
+    has_fused_qkv: bool = False
     # our key size (the kernel area) is smaller than the key size used in training (entire canvas),
     # so the attention softmax is dividing by fewer elements and thus elements become too large / have too much variance
     # in other words, the softmax outputs too sharp a distribution of probabilities (closer to a one-hot vector).
@@ -59,7 +60,6 @@ class NattenAttnProcessor:
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
     ):
-        assert hasattr(attn, 'qkv'), "Did not find property qkv on attn. Expected you to fuse its q_proj, k_proj, v_proj weights and biases beforehand, and multiply attn.scale into the q weights and bias."
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
         residual = hidden_states
@@ -76,10 +76,17 @@ class NattenAttnProcessor:
             hidden_states = attn.group_norm(hidden_states)
             hidden_states = rearrange(hidden_states, '... c (h w) -> ... (h w) c')
 
-        qkv = attn.qkv(hidden_states)
-        # assumes MHA (as opposed to GQA)
-        # assumes that the scale factor has already been fused into the weights
-        q, k, v = rearrange(qkv, "n (h w) (t nh e) -> t n nh h w e", t=3, nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width)
+        if self.has_fused_qkv:
+            assert hasattr(attn, 'qkv'), "Did not find property qkv on attn. Expected you to fuse its q_proj, k_proj, v_proj weights and biases beforehand, and multiply attn.scale into the q weights and bias."
+            qkv = attn.qkv(hidden_states)
+            # assumes MHA (as opposed to GQA)
+            # assumes that the scale factor has already been fused into the weights
+            q, k, v = rearrange(qkv, "n (h w) (t nh e) -> t n nh h w e", t=3, nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width)
+        else:
+            q = attn.to_q(hidden_states)
+            k = attn.to_k(hidden_states)
+            v = attn.to_v(hidden_states)
+            q, k, v = [rearrange(p, "n (h w) (nh e) -> n nh h w e", nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width) for p in (q, k, v)]
 
         if self.scale_attn_entropy or not self.has_fused_scale_factor:
             scale = 1. if self.has_fused_scale_factor else attn.scale
