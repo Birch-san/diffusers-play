@@ -33,7 +33,7 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.visit_attns import AttnAcceptor, visit_attns
-from helpers.attention.demote_attn import make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor
+from helpers.attention.demote_attn import MakePickAttnDelegate, make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor, make_delegation_by_sigma_cutoff, make_default_attn
 from helpers.attention.natten_attn import Dimension
 from helpers.attention.dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
 from helpers.attention.attn_processor import AttnProcessor as AttnProcessorProto
@@ -290,21 +290,22 @@ latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, wi
 
 limit_global_self_attn = True
 if limit_global_self_attn:
-  null_attn_maker: AttnAcceptor = partial(make_null_attn, delete_qk=True)
+  null_attn_maker: AttnAcceptor = partial(make_null_attn, delete_qk=False)
   sample_size = Dimension(height=latents_shape.height, width=latents_shape.width)
   natten_maker: AttnAcceptor = partial(
     make_neighbourhood_attn,
     sample_size=sample_size,
-    kernel_size=7,
+    kernel_size=17,
     scale_attn_entropy=True,
-    fuse_qkv=True,
-    qkv_fusion_fuses_scale_factor=True,
+    fuse_qkv=False,
+    qkv_fusion_fuses_scale_factor=False,
   )
   # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=null_attn_maker))
-  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=natten_maker))
-  # dispatcher: AttnAcceptor = partial(make_dispatch_attn, get_attn_processor=)
-  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=dispatcher)
-  visit_receipt = visit_attns(unet, levels=1, attn_acceptor=attn_setter)
+  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=natten_maker))
+  make_pick_attn_delegate: MakePickAttnDelegate = partial(make_delegation_by_sigma_cutoff, get_high_sigma_attn_processor=make_default_attn, get_low_sigma_attn_processor=natten_maker, low_sigma=3.1686)
+  dispatcher: AttnAcceptor = partial(make_dispatch_attn, make_pick_attn_delegate=make_pick_attn_delegate)
+  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=dispatcher)
+  visit_receipt = visit_attns(unet, levels=2, attn_acceptor=attn_setter)
   print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
@@ -398,11 +399,12 @@ prompt_texts: List[str] = [
 
 seeds: Iterable[int] = chain(
   # (2678555696,),
+  (3268437008,),
   # (get_seed() for _ in range(n_rand_seeds)),
   # (seed for _ in range(n_rand_seeds//2) for seed in repeat(get_seed(), 2)),
   # (seed for _ in range(len(seeds_nominal)) for seed in chain.from_iterable(repeat(seeds_nominal, len(cfg_scales_)))),
   # (seed for seed in seeds_nominal for _ in range(len(cfg_scales_)*len(dynthresh_percentiles)*len(prompt_texts))),
-  (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
+  # (seed for _ in repeat(None, n_rand_seeds) for seed in repeat(get_seed(), len(prompt_texts))),
 )
 
 # uncond_prompt=BasicPrompt(text='')

@@ -6,7 +6,8 @@ from typing import Protocol, Optional
 from .attn_processor import SigmaAttnProcessor, AttnProcessor
 
 class PickAttnDelegate(Protocol):
-  def __call__(self, sigma: float) -> AttnProcessor: ...
+  @staticmethod
+  def __call__(sigma: float) -> AttnProcessor: ...
 
 @dataclass
 class DispatchAttnProcessor(SigmaAttnProcessor):
