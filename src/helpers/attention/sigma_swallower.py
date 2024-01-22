@@ -1,17 +1,12 @@
-from diffusers.models.attention import Attention
 from dataclasses import dataclass
+from diffusers.models.attention import Attention
 from torch import FloatTensor, BoolTensor
-from typing import Protocol, Optional
-
+from typing import Optional
 from .attn_processor import SigmaAttnProcessor, AttnProcessor
 
-class PickAttnDelegate(Protocol):
-  def __call__(self, sigma: float) -> AttnProcessor: ...
-
 @dataclass
-class DispatchAttnProcessor(SigmaAttnProcessor):
-  pick_delegate: PickAttnDelegate
-
+class SigmaSwallower(SigmaAttnProcessor):
+  delegate: AttnProcessor
   def __call__(
     self,
     attn: Attention,
@@ -21,12 +16,10 @@ class DispatchAttnProcessor(SigmaAttnProcessor):
     attention_mask: Optional[BoolTensor] = None,
     temb: Optional[FloatTensor] = None,
   ) -> FloatTensor:
-    delegate: AttnProcessor = self.pick_delegate(sigma)
-    out: FloatTensor = delegate(
+    return self.delegate(
       attn,
       hidden_states,
       encoder_hidden_states=encoder_hidden_states,
       attention_mask=attention_mask,
       temb=temb,
     )
-    return out

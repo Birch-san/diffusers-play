@@ -10,5 +10,15 @@ class AttnProcessor(Protocol):
     encoder_hidden_states: Optional[FloatTensor] = None,
     attention_mask: Optional[BoolTensor] = None,
     temb: Optional[FloatTensor] = None,
-    **kwargs,
+  ) -> FloatTensor: ...
+
+class SigmaAttnProcessor(Protocol):
+  def __call__(
+    self,
+    attn: Attention,
+    hidden_states: FloatTensor,
+    sigma: float,
+    encoder_hidden_states: Optional[FloatTensor] = None,
+    attention_mask: Optional[BoolTensor] = None,
+    temb: Optional[FloatTensor] = None,
   ) -> FloatTensor: ...

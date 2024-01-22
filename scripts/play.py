@@ -33,8 +33,11 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.visit_attns import AttnAcceptor, visit_attns
-from helpers.attention.demote_attn import to_neighbourhood_attn, to_null_attn
+from helpers.attention.demote_attn import make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor
 from helpers.attention.natten_attn import Dimension
+from helpers.attention.dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
+from helpers.attention.attn_processor import AttnProcessor as AttnProcessorProto
+from helpers.attention.sigma_swallower import SigmaSwallower
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -143,13 +146,19 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
   variant=variant,
 ).to(device).eval()
 
+# if you want to be able to use DispatchAttnProcessor (i.e. to dispatch attn to a different AttnProcessor based on sigma):
+# we will need to pass cross_attention_kwargs={'sigma': ...} to UNet2DConditionModel#forward().
+# but the default AttnProcessors such as AttnProcessor2_0 don't accept unknown kwargs, so we must wrap with a sigma swallower.
+pass_sigma_kwarg = True
+def swallow_sigma_kwarg(attn_processor: AttnProcessorProto) -> AttnProcessorProto:
+  return SigmaSwallower(attn_processor) if pass_sigma_kwarg else attn_processor
+
 attn_mode = AttentionMode.Standard
 match(attn_mode):
-  case AttentionMode.Standard: pass
   case AttentionMode.Classic:
-    unet.set_attn_processor(AttnProcessor())
+    unet.set_attn_processor(swallow_sigma_kwarg(AttnProcessor()))
   case AttentionMode.Sliced:
-    unet.set_attn_processor(SlicedAttnProcessor(slice_size=2))
+    unet.set_attn_processor(swallow_sigma_kwarg(SlicedAttnProcessor(slice_size=2)))
   case AttentionMode.Chunked:
     set_chunked_attn: TapAttn = make_set_chunked_attn(
       query_chunk_size = 1024,
@@ -160,10 +169,11 @@ match(attn_mode):
   case AttentionMode.TorchMultiheadAttention:
     tap_module: TapModule = replace_attn_to_tap_module(to_mha)
     unet.apply(tap_module)
-  case AttentionMode.ScaledDPAttn:
-    unet.set_attn_processor(AttnProcessor2_0())
+  case AttentionMode.Standard | AttentionMode.ScaledDPAttn:
+    unet.set_attn_processor(swallow_sigma_kwarg(AttnProcessor2_0()))
   case AttentionMode.Xformers:
     assert is_xformers_available()
+    assert not pass_sigma_kwarg, "it's slightly harder to wrap XFormersAttnProcessor with a SigmaSwallower so haven't implemented it. "
     unet.enable_xformers_memory_efficient_attention()
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
@@ -280,17 +290,21 @@ latents_shape = LatentsShape(unet.in_channels, height // latent_scale_factor, wi
 
 limit_global_self_attn = True
 if limit_global_self_attn:
-  # attn_acceptor: AttnAcceptor = partial(to_null_attn, delete_qk=True)
+  null_attn_maker: AttnAcceptor = partial(make_null_attn, delete_qk=True)
   sample_size = Dimension(height=latents_shape.height, width=latents_shape.width)
-  attn_acceptor: AttnAcceptor = partial(
-    to_neighbourhood_attn,
+  natten_maker: AttnAcceptor = partial(
+    make_neighbourhood_attn,
     sample_size=sample_size,
     kernel_size=7,
     scale_attn_entropy=True,
     fuse_qkv=True,
     qkv_fusion_fuses_scale_factor=True,
   )
-  visit_receipt = visit_attns(unet, levels=1, attn_acceptor=attn_acceptor)
+  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=null_attn_maker))
+  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=natten_maker))
+  # dispatcher: AttnAcceptor = partial(make_dispatch_attn, get_attn_processor=)
+  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=dispatcher)
+  visit_receipt = visit_attns(unet, levels=1, attn_acceptor=attn_setter)
   print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
@@ -567,6 +581,7 @@ with no_grad():
       mimic_scales=mimic_scales,
       dynthresh_percentile=dynthresh_percentile,
       center_denoise_outputs=center_denoise_outputs,
+      pass_sigma_kwarg=pass_sigma_kwarg,
       dynthresh_latent_decoder=dynthresh_decoder,
       dynthresh_latent_encoder=dynthresh_encoder,
       pixel_space_dynthresh=pixel_space_dynthresh,

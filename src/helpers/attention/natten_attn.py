@@ -61,7 +61,6 @@ class NattenAttnProcessor(AttnProcessor):
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
-        **kwargs,
     ):
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."

@@ -1,15 +1,27 @@
 from diffusers.models.attention import Attention
+from typing import Protocol
 from .null_attn import NullAttnProcessor
 from .natten_attn import NattenAttnProcessor, Dimension
+from .dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
+from .sigma_swallower import SigmaSwallower
 from .qkv_fusion import fuse_qkv as fuse_qkv_
+from .attn_processor import AttnProcessor
 
-def to_null_attn(attn: Attention, level: int, delete_qk=False) -> None:
+class GetAttnProcessor(Protocol):
+  @staticmethod
+  def __call__(self, attn: Attention, level: int) -> AttnProcessor: ...
+
+def set_attn_processor(attn: Attention, level: int, get_attn_processor: GetAttnProcessor) -> None:
+  attn_processor: AttnProcessor = get_attn_processor(attn, level)
+  attn.set_processor(attn_processor)
+
+def make_null_attn(attn: Attention, level: int, delete_qk=False) -> NullAttnProcessor:
   if delete_qk:
     del attn.to_q, attn.to_k
   null_attn = NullAttnProcessor()
-  attn.set_processor(null_attn)
+  return null_attn
 
-def to_neighbourhood_attn(
+def make_neighbourhood_attn(
   attn: Attention,
   level: int,
   sample_size: Dimension,
@@ -17,7 +29,7 @@ def to_neighbourhood_attn(
   scale_attn_entropy=False,
   fuse_qkv=False,
   qkv_fusion_fuses_scale_factor=False,
-) -> None:
+) -> NattenAttnProcessor:
   if fuse_qkv:
     fuse_qkv_(attn, fuse_scale_factor=qkv_fusion_fuses_scale_factor)
   downsampled_size = sample_size
@@ -35,4 +47,12 @@ def to_neighbourhood_attn(
     has_fused_qkv=fuse_qkv,
     scale_attn_entropy=scale_attn_entropy,
   )
-  attn.set_processor(natten)
+  return natten
+
+def make_sigma_swallower(attn: Attention, level: int, get_attn_processor: GetAttnProcessor) -> SigmaSwallower:
+  attn_processor: AttnProcessor = get_attn_processor(attn, level)
+  return SigmaSwallower(attn_processor)
+
+def make_dispatch_attn(attn: Attention, level: int, pick_attn_delegate: PickAttnDelegate) -> DispatchAttnProcessor:
+  # TODO
+  return DispatchAttnProcessor()

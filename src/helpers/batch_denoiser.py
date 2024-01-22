@@ -2,7 +2,7 @@ from abc import ABC
 from dataclasses import dataclass, field
 from torch import LongTensor, BoolTensor, FloatTensor, where
 import torch
-from typing import Protocol, Optional
+from typing import Protocol, Optional, Dict, Any
 from .diffusers_denoiser import DiffusersSDDenoiser
 from .post_init import PostInitMixin
 from .approx_vae.dynthresh_latent_roundtrip import LatentsToRGB, RGBToLatents
@@ -23,6 +23,7 @@ class AbstractBatchDenoiser(PostInitMixin, ABC, Denoiser):
   conds_per_prompt: LongTensor
   cond_weights: FloatTensor
   center_denoise_outputs: Optional[BoolTensor]
+  pass_sigma_kwarg: bool
   cond_count: int = field(init=False)
   batch_size: int = field(init=False)
   
@@ -47,15 +48,18 @@ class BatchNoCFGDenoiser(AbstractBatchDenoiser):
     noised_latents: FloatTensor,
     sigma: FloatTensor,
   ) -> FloatTensor:
+    sigma_: float = sigma[0].item()
     noised_latents_in: FloatTensor = noised_latents.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
     del noised_latents
     sigma_in: FloatTensor = sigma.repeat_interleave(self.conds_per_prompt, dim=0, output_size=self.cond_count)
     del sigma
+    cross_attention_kwargs: Optional[Dict[str, Any]] = {'sigma': sigma_} if self.pass_sigma_kwarg else None
     denoised_latents: FloatTensor = self.denoiser.forward(
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=self.cross_attention_conds,
       attention_mask=self.cross_attention_mask,
+      cross_attention_kwargs=cross_attention_kwargs,
     )
     del noised_latents_in, sigma_in
     if self.center_denoise_outputs is not None:
@@ -199,11 +203,13 @@ class BatchCFGDenoiser(AbstractBatchDenoiser):
     del noised_latents
     sigma_in: FloatTensor = sigma.repeat_interleave(conds_per_prompt, dim=0, output_size=cond_count)
     del sigma
+    cross_attention_kwargs: Optional[Dict[str, Any]] = {'sigma': sigma_} if self.pass_sigma_kwarg else None
     denoised_latents: FloatTensor = self.denoiser.forward(
       input=noised_latents_in,
       sigma=sigma_in,
       encoder_hidden_states=cross_attention_conds,
       cross_attention_mask=cross_attention_mask,
+      cross_attention_kwargs=cross_attention_kwargs,
     )
     if self.center_denoise_outputs is not None:
       denoised_latents = where(
@@ -251,6 +257,7 @@ class BatchDenoiserFactory():
     pixel_space_dynthresh: bool = False,
     cfg_until_sigma: Optional[float] = None,
     dynthresh_until_sigma: Optional[float] = None,
+    pass_sigma_kwarg = False,
   ) -> Denoiser:
     assert (cfg_scales is None) == (uncond_ixs is None)
     if uncond_ixs is None:
@@ -261,6 +268,7 @@ class BatchDenoiserFactory():
         conds_per_prompt=conds_per_prompt,
         cond_weights=cond_weights,
         center_denoise_outputs=center_denoise_outputs,
+        pass_sigma_kwarg=pass_sigma_kwarg,
       )
     return BatchCFGDenoiser(
       denoiser=self.denoiser,
@@ -269,6 +277,7 @@ class BatchDenoiserFactory():
       conds_per_prompt=conds_per_prompt,
       cond_weights=cond_weights,
       center_denoise_outputs=center_denoise_outputs,
+      pass_sigma_kwarg=pass_sigma_kwarg,
       uncond_ixs=uncond_ixs,
       cfg_scales=cfg_scales,
       mimic_scales=mimic_scales,

@@ -19,7 +19,6 @@ class NullAttnProcessor(AttnProcessor):
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
-        **kwargs,
     ):
         residual = hidden_states
 
