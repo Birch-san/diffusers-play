@@ -4,6 +4,7 @@ from typing import Protocol
 import torch
 from .null_attn import NullAttnProcessor
 from .natten_attn import NattenAttnProcessor, Dimension
+from .selfsubself_attn import SelfSubSelfAttnProcessor
 from .dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
 from .sigma_swallower import SigmaSwallower
 from .qkv_fusion import fuse_qkv as fuse_qkv_
@@ -49,6 +50,36 @@ def make_neighbourhood_attn(
   natten = NattenAttnProcessor(
     kernel_size=kernel_size,
     expect_size=downsampled_size,
+    has_fused_scale_factor=fuse_qkv and qkv_fusion_fuses_scale_factor,
+    has_fused_qkv=fuse_qkv,
+    scale_attn_entropy=scale_attn_entropy,
+  )
+  return natten
+
+def make_self_subself_attn(
+  attn: Attention,
+  level: int,
+  sample_size: Dimension,
+  kernel_size=7,
+  global_subsample=2,
+  scale_attn_entropy=False,
+  fuse_qkv=False,
+  qkv_fusion_fuses_scale_factor=False,
+) -> SelfSubSelfAttnProcessor:
+  if fuse_qkv:
+    fuse_qkv_(attn, fuse_scale_factor=qkv_fusion_fuses_scale_factor)
+  downsampled_size = sample_size
+  # yes I know about raising 2 to the power of negative number, but I want to model a repeated rounding-down
+  downsample = torch.nn.Conv2d(1,1, kernel_size=3, stride=2, padding=1)
+  size_probe = torch.ones(1,sample_size.height,sample_size.width)
+  for _ in range(level):
+    size_probe = downsample(size_probe)
+    height, width = size_probe.shape[1:]
+    downsampled_size = Dimension(height=height, width=width)
+  natten = SelfSubSelfAttnProcessor(
+    kernel_size=kernel_size,
+    expect_size=downsampled_size,
+    global_subsample=global_subsample,
     has_fused_scale_factor=fuse_qkv and qkv_fusion_fuses_scale_factor,
     has_fused_qkv=fuse_qkv,
     scale_attn_entropy=scale_attn_entropy,

@@ -18,7 +18,7 @@ class Dimension(NamedTuple):
     width: int
 
 @dataclass
-class NattenAttnProcessor(AttnProcessor):
+class SelfSubSelfAttnProcessor(AttnProcessor):
     r"""
     Processor for implementing local neighbourhood attention via NATTEN
     Based on:
@@ -28,6 +28,7 @@ class NattenAttnProcessor(AttnProcessor):
     kernel_size: int
     # tell me on construction what size to expect, so I can unflatten the sequence into height and width again
     expect_size: Dimension
+    global_subsample: int
     has_fused_scale_factor: bool = False
     has_fused_qkv: bool = False
     # our key size (the kernel area) is smaller than the key size used in training (entire canvas),
@@ -37,7 +38,8 @@ class NattenAttnProcessor(AttnProcessor):
     # makes attn probabilities more diffuse, more entropic, to try to match the training distribution more closely.
     # the only reason this defaults to False is because it's obscure. it's principled and seems to help, so you should turn it on.
     scale_attn_entropy: bool = False
-    entropy_scale: float = field(init=False)
+    train_key_len: int = field(init=False)
+    kernel_area: int = field(init=False)
 
     def __post_init__(self):
         if natten is None:
@@ -50,9 +52,9 @@ class NattenAttnProcessor(AttnProcessor):
         #   self.scale * log(inference_key_len, train_key_len)**.5
         # if your train/inference key lengths can be as short as 1, then clamp key lengths to avoid an entropy scale of 0 or infinite
         #                log(max(inference_key_len, 2), max(train_key_len, 2))**.5
-        train_key_len = self.expect_size.height * self.expect_size.width
-        inference_key_len = self.kernel_size**2
-        self.entropy_scale = math.log(inference_key_len, train_key_len)**.5
+        self.train_key_len = self.expect_size.height * self.expect_size.width
+        self.kernel_area = self.kernel_size**2
+        assert self.global_subsample > 1
 
     def __call__(
         self,
@@ -64,6 +66,7 @@ class NattenAttnProcessor(AttnProcessor):
     ):
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
+        
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -90,15 +93,20 @@ class NattenAttnProcessor(AttnProcessor):
             v = attn.to_v(hidden_states)
             q, k, v = [rearrange(p, "n (h w) (nh e) -> n nh h w e", nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width) for p in (q, k, v)]
 
+        k_sub, v_sub = [p[:,:,::self.global_subsample,::self.global_subsample,:].flatten(start_dim=-3, end_dim=-2).contiguous() for p in (k, v)]
+
         if self.scale_attn_entropy or not self.has_fused_scale_factor:
             scale = 1. if self.has_fused_scale_factor else attn.scale
             if self.scale_attn_entropy:
-                scale *= self.entropy_scale
+                subsamp_area: int = k_sub.size(-3) * k_sub.size(-2)
+                inference_key_len: int = self.kernel_area + subsamp_area
+                entropy_scale: float = math.log(inference_key_len, self.train_key_len)**.5
+                scale *= entropy_scale
             q *= scale
 
-        qk = natten.functional.natten2dqk(q, k, self.kernel_size, 1)
+        qk = natten.functional.natten2dqk(q, k, self.kernel_size, 1, additional_keys=k_sub)
         a = torch.softmax(qk, dim=-1)
-        hidden_states = natten.functional.natten2dav(a, v, self.kernel_size, 1)
+        hidden_states = natten.functional.natten2dav(a, v, self.kernel_size, 1, additional_values=v_sub)
         hidden_states = rearrange(hidden_states, "n nh h w e -> n h w (nh e)")
 
         out_proj, dropout = attn.to_out
