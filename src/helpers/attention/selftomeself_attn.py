@@ -18,7 +18,7 @@ class Dimension(NamedTuple):
     width: int
 
 @dataclass
-class SelfSubSelfAttnProcessor(AttnProcessor):
+class SelfToMeSelfAttnProcessor(AttnProcessor):
     r"""
     Processor for implementing local neighbourhood attention via NATTEN
     Based on:

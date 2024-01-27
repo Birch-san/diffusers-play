@@ -33,7 +33,7 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.visit_attns import AttnAcceptor, visit_attns
-from helpers.attention.demote_attn import MakePickAttnDelegate, make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor, make_delegation_by_sigma_cutoff, make_default_attn, make_self_subself_attn
+from helpers.attention.demote_attn import MakePickAttnDelegate, make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor, make_delegation_by_sigma_cutoff, make_default_attn, make_self_subself_attn, make_self_tomeself_attn
 from helpers.attention.natten_attn import Dimension
 from helpers.attention.dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
 from helpers.attention.attn_processor import AttnProcessor as AttnProcessorProto
@@ -313,9 +313,19 @@ if limit_global_self_attn:
     fuse_qkv=False,
     qkv_fusion_fuses_scale_factor=False,
   )
+  selftomeself_maker: AttnAcceptor = partial(
+    make_self_tomeself_attn,
+    sample_size=sample_size,
+    kernel_size=kernel_size,
+    global_subsample=2,
+    scale_attn_entropy=True,
+    fuse_qkv=False,
+    qkv_fusion_fuses_scale_factor=False,
+  )
   # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=null_attn_maker))
   # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=natten_maker))
-  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=selfsubself_maker))
+  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=selfsubself_maker))
+  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=selftomeself_maker))
   # assert low_sigma is not None
   # make_pick_attn_delegate: MakePickAttnDelegate = partial(make_delegation_by_sigma_cutoff, get_high_sigma_attn_processor=make_default_attn, get_low_sigma_attn_processor=natten_maker, low_sigma=low_sigma)
   # dispatcher: AttnAcceptor = partial(make_dispatch_attn, make_pick_attn_delegate=make_pick_attn_delegate)
