@@ -1,12 +1,13 @@
 from diffusers.models.attention import Attention
 import torch
 from torch import FloatTensor, BoolTensor
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, Callable
 from einops import rearrange
 from dataclasses import dataclass, field
 import math
 
 from .attn_processor import AttnProcessor
+from .tome.tomesd.merge import bipartite_soft_matching_random2d
 
 try:
     import natten
@@ -28,7 +29,9 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
     kernel_size: int
     # tell me on construction what size to expect, so I can unflatten the sequence into height and width again
     expect_size: Dimension
-    global_subsample: int
+    stride: int
+    quotient_token_removal: float
+    make_generator: Callable[[], torch.Generator] = field(default=torch.Generator)
     has_fused_scale_factor: bool = False
     has_fused_qkv: bool = False
     # our key size (the kernel area) is smaller than the key size used in training (entire canvas),
@@ -54,7 +57,7 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
         #                log(max(inference_key_len, 2), max(train_key_len, 2))**.5
         self.train_key_len = self.expect_size.height * self.expect_size.width
         self.kernel_area = self.kernel_size**2
-        assert self.global_subsample > 1
+        assert self.quotient_token_removal > 0 and self.quotient_token_removal < 1
 
     def __call__(
         self,
@@ -93,13 +96,41 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
             v = attn.to_v(hidden_states)
             q, k, v = [rearrange(p, "n (h w) (nh e) -> n nh h w e", nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width) for p in (q, k, v)]
 
-        k_sub, v_sub = [p[:,:,::self.global_subsample,::self.global_subsample,:].flatten(start_dim=-3, end_dim=-2).contiguous() for p in (k, v)]
+        seq_len: int = k.size(-2)*k.size(-3)
+        tokens_removed = int(seq_len * self.quotient_token_removal)
+
+        k_flat = rearrange(k, 'n nh h w e -> (n nh) (h w) e')
+        v_flat = rearrange(v, 'n nh h w e -> (n nh) (h w) e')
+        # TODO: can we use the same merger on both k and v?
+        #       it seems to use the passed-in tensor as a metric for computing cosine similarity, so maybe not?
+        # TODO: can we create the merger on construction, knowing only the expected shape of k or v, and not the data?
+        #       again, probably not, because it seems to rely on the data within the passed-in tensor
+        merge_k, _ = bipartite_soft_matching_random2d(
+            k_flat,
+            w=k.size(-2),
+            h=k.size(-3),
+            sx=self.stride,
+            sy=self.stride,
+            r=tokens_removed,
+            generator=self.make_generator(),
+            )
+        merge_v, _ = bipartite_soft_matching_random2d(
+            v_flat,
+            w=v.size(-2),
+            h=v.size(-3),
+            sx=self.stride,
+            sy=self.stride,
+            r=tokens_removed,
+            generator=self.make_generator(),
+            )
+        k_sub = merge_k(k_flat).unflatten(0, (-1, attn.heads))
+        v_sub = merge_v(v_flat).unflatten(0, (-1, attn.heads))
 
         if self.scale_attn_entropy or not self.has_fused_scale_factor:
             scale = 1. if self.has_fused_scale_factor else attn.scale
             if self.scale_attn_entropy:
-                subsamp_area: int = k_sub.size(-3) * k_sub.size(-2)
-                inference_key_len: int = self.kernel_area + subsamp_area
+                tome_area: int = k_sub.size(-2)
+                inference_key_len: int = self.kernel_area + tome_area
                 entropy_scale: float = math.log(inference_key_len, self.train_key_len)**.5
                 scale *= entropy_scale
             q *= scale

@@ -1,6 +1,6 @@
 from diffusers.models.attention import Attention
 from diffusers.models.attention_processor import AttnProcessor2_0
-from typing import Protocol
+from typing import Protocol, Callable
 import torch
 from .null_attn import NullAttnProcessor
 from .natten_attn import NattenAttnProcessor, Dimension
@@ -92,7 +92,9 @@ def make_self_tomeself_attn(
   level: int,
   sample_size: Dimension,
   kernel_size=7,
-  global_subsample=2,
+  stride=2,
+  quotient_token_removal=.5,
+  make_generator: Callable[[], torch.Generator]=torch.Generator,
   scale_attn_entropy=False,
   fuse_qkv=False,
   qkv_fusion_fuses_scale_factor=False,
@@ -110,7 +112,9 @@ def make_self_tomeself_attn(
   natten = SelfToMeSelfAttnProcessor(
     kernel_size=kernel_size,
     expect_size=downsampled_size,
-    global_subsample=global_subsample,
+    quotient_token_removal=quotient_token_removal,
+    stride=stride,
+    make_generator=make_generator,
     has_fused_scale_factor=fuse_qkv and qkv_fusion_fuses_scale_factor,
     has_fused_qkv=fuse_qkv,
     scale_attn_entropy=scale_attn_entropy,
