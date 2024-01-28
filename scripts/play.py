@@ -33,11 +33,13 @@ from helpers.attention.set_chunked_attn import make_set_chunked_attn
 from helpers.attention.tap_attn import TapAttn, tap_attn_to_tap_module
 from helpers.attention.replace_attn import replace_attn_to_tap_module
 from helpers.attention.visit_attns import AttnAcceptor, visit_attns
-from helpers.attention.demote_attn import MakePickAttnDelegate, make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_sigma_swallower, set_attn_processor, make_delegation_by_sigma_cutoff, make_default_attn, make_self_subself_attn, make_self_tomeself_attn
+from helpers.attention.demote_attn import MakePickAttnDelegate, make_dispatch_attn, make_neighbourhood_attn, make_null_attn, make_attn_kwarg_filter, set_attn_processor, make_delegation_by_sigma_cutoff, make_default_attn, make_self_subself_attn, make_self_tomeself_attn
 from helpers.attention.natten_attn import Dimension
 from helpers.attention.dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
 from helpers.attention.attn_processor import AttnProcessor as AttnProcessorProto
-from helpers.attention.sigma_swallower import SigmaSwallower
+from helpers.attention.attn_kwarg_filter import AttnKwargFilter
+from helpers.attention.tome.replace_transformer_block import set_transformer_block_with_tome_support
+from helpers.attention.selftomeself_attn import ToMeSpec, KthBiPartiteSoftMatching, BiPartiteSoftMatchingRandom2D
 from helpers.tap.tap_module import TapModule
 from helpers.schedule_params import get_alphas, get_alphas_cumprod, get_betas, quantize_to
 from helpers.get_seed import get_seed
@@ -150,15 +152,16 @@ unet: UNet2DConditionModel = UNet2DConditionModel.from_pretrained(
 # we will need to pass cross_attention_kwargs={'sigma': ...} to UNet2DConditionModel#forward().
 # but the default AttnProcessors such as AttnProcessor2_0 don't accept unknown kwargs, so we must wrap with a sigma swallower.
 pass_sigma_kwarg = True
-def swallow_sigma_kwarg(attn_processor: AttnProcessorProto) -> AttnProcessorProto:
-  return SigmaSwallower(attn_processor) if pass_sigma_kwarg else attn_processor
+passing_attn_kwargs: bool = pass_sigma_kwarg
+def filter_attn_kwargs(attn_processor: AttnProcessorProto) -> AttnProcessorProto:
+  return AttnKwargFilter(attn_processor) if passing_attn_kwargs else attn_processor
 
 attn_mode = AttentionMode.Standard
 match(attn_mode):
   case AttentionMode.Classic:
-    unet.set_attn_processor(swallow_sigma_kwarg(AttnProcessor()))
+    unet.set_attn_processor(filter_attn_kwargs(AttnProcessor()))
   case AttentionMode.Sliced:
-    unet.set_attn_processor(swallow_sigma_kwarg(SlicedAttnProcessor(slice_size=2)))
+    unet.set_attn_processor(filter_attn_kwargs(SlicedAttnProcessor(slice_size=2)))
   case AttentionMode.Chunked:
     set_chunked_attn: TapAttn = make_set_chunked_attn(
       query_chunk_size = 1024,
@@ -170,10 +173,10 @@ match(attn_mode):
     tap_module: TapModule = replace_attn_to_tap_module(to_mha)
     unet.apply(tap_module)
   case AttentionMode.Standard | AttentionMode.ScaledDPAttn:
-    unet.set_attn_processor(swallow_sigma_kwarg(AttnProcessor2_0()))
+    unet.set_attn_processor(filter_attn_kwargs(AttnProcessor2_0()))
   case AttentionMode.Xformers:
     assert is_xformers_available()
-    assert not pass_sigma_kwarg, "it's slightly harder to wrap XFormersAttnProcessor with a SigmaSwallower so haven't implemented it. "
+    assert not passing_attn_kwargs, "it's slightly harder to wrap XFormersAttnProcessor with a AttnKwargFilter so haven't implemented it. "
     unet.enable_xformers_memory_efficient_attention()
 
 # sampling in higher-precision helps to converge more stably toward the "true" image (not necessarily better-looking though)
@@ -313,27 +316,42 @@ if limit_global_self_attn:
     fuse_qkv=False,
     qkv_fusion_fuses_scale_factor=False,
   )
+  tome_spec = KthBiPartiteSoftMatching(k=2)
+  # tome_spec = BiPartiteSoftMatchingRandom2D(
+  #   stride=2,
+  #   quotient_token_removal=.75,
+  #   make_generator = lambda: torch.Generator(device='cpu').manual_seed(42),
+  # )
   selftomeself_maker: AttnAcceptor = partial(
     make_self_tomeself_attn,
     sample_size=sample_size,
     kernel_size=kernel_size,
-    stride=2,
-    quotient_token_removal=.75,
-    make_generator = lambda: torch.Generator(device=device).manual_seed(42),
+    tome_spec=tome_spec,
     scale_attn_entropy=True,
     fuse_qkv=False,
     qkv_fusion_fuses_scale_factor=False,
   )
-  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=null_attn_maker))
-  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=natten_maker))
-  # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=selfsubself_maker))
-  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=partial(make_sigma_swallower, get_attn_processor=selftomeself_maker))
+  # get_attn_processor: AttnAcceptor = null_attn_maker
+  # get_attn_processor: AttnAcceptor = natten_maker
+  # get_attn_processor: AttnAcceptor = selfsubself_maker
+  # uses_tome = False
+  get_attn_processor: AttnAcceptor = selftomeself_maker
+  uses_tome = True
+  
+  if passing_attn_kwargs:
+    get_attn_processor: AttnAcceptor = partial(make_attn_kwarg_filter, get_attn_processor=get_attn_processor)
+
+  attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=get_attn_processor)
   # assert low_sigma is not None
   # make_pick_attn_delegate: MakePickAttnDelegate = partial(make_delegation_by_sigma_cutoff, get_high_sigma_attn_processor=make_default_attn, get_low_sigma_attn_processor=natten_maker, low_sigma=low_sigma)
   # dispatcher: AttnAcceptor = partial(make_dispatch_attn, make_pick_attn_delegate=make_pick_attn_delegate)
   # attn_setter: AttnAcceptor = partial(set_attn_processor, get_attn_processor=dispatcher)
   visit_receipt = visit_attns(unet, levels=levels, attn_acceptor=attn_setter)
   print(f'Visited attention in {visit_receipt.down_blocks_touched} down blocks, {visit_receipt.up_blocks_touched} up blocks, and {visit_receipt.mid_blocks_touched} mid blocks.')
+  if uses_tome:
+    # strictly speaking we could limit this to just the UNet levels where the ToMe attention processor is installed
+    # but all it does is pass an extra kwarg to the attn processor, which the kwarg filter will discard
+    set_transformer_block_with_tome_support(unet)
 
 # img_tensor: FloatTensor = load_img('/home/birch/badger-clean.png')
 # img_tensor: FloatTensor = load_img('/home/birch/flandre2.png')

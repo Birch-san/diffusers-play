@@ -5,9 +5,10 @@ import torch
 from .null_attn import NullAttnProcessor
 from .natten_attn import NattenAttnProcessor, Dimension
 from .selfsubself_attn import SelfSubSelfAttnProcessor
-from .selftomeself_attn import SelfToMeSelfAttnProcessor
+from .selftomeself_attn import SelfToMeSelfAttnProcessor, ToMeSpec
 from .dispatch_attn import DispatchAttnProcessor, PickAttnDelegate
 from .sigma_swallower import SigmaSwallower
+from .attn_kwarg_filter import AttnKwargFilter
 from .qkv_fusion import fuse_qkv as fuse_qkv_
 from .attn_processor import AttnProcessor
 
@@ -91,10 +92,8 @@ def make_self_tomeself_attn(
   attn: Attention,
   level: int,
   sample_size: Dimension,
+  tome_spec: ToMeSpec,
   kernel_size=7,
-  stride=2,
-  quotient_token_removal=.5,
-  make_generator: Callable[[], torch.Generator]=torch.Generator,
   scale_attn_entropy=False,
   fuse_qkv=False,
   qkv_fusion_fuses_scale_factor=False,
@@ -112,9 +111,7 @@ def make_self_tomeself_attn(
   natten = SelfToMeSelfAttnProcessor(
     kernel_size=kernel_size,
     expect_size=downsampled_size,
-    quotient_token_removal=quotient_token_removal,
-    stride=stride,
-    make_generator=make_generator,
+    tome_spec=tome_spec,
     has_fused_scale_factor=fuse_qkv and qkv_fusion_fuses_scale_factor,
     has_fused_qkv=fuse_qkv,
     scale_attn_entropy=scale_attn_entropy,
@@ -124,6 +121,10 @@ def make_self_tomeself_attn(
 def make_sigma_swallower(attn: Attention, level: int, get_attn_processor: GetAttnProcessor) -> SigmaSwallower:
   attn_processor: AttnProcessor = get_attn_processor(attn, level)
   return SigmaSwallower(attn_processor)
+
+def make_attn_kwarg_filter(attn: Attention, level: int, get_attn_processor: GetAttnProcessor) -> AttnKwargFilter:
+  attn_processor: AttnProcessor = get_attn_processor(attn, level)
+  return AttnKwargFilter(attn_processor)
 
 class MakePickAttnDelegate(Protocol):
   @staticmethod

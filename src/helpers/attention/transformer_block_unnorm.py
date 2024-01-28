@@ -8,6 +8,10 @@ from diffusers.models.attention import BasicTransformerBlock
 @maybe_allow_in_graph
 class TransformerBlockUnNorm(Module):
     delegate: BasicTransformerBlock
+    def __init__(self, delegate: BasicTransformerBlock) -> None:
+        super().__init__()
+        self.delegate = delegate
+
     def forward(
         self,
         hidden_states: FloatTensor,

@@ -4,15 +4,34 @@ from torch import FloatTensor, BoolTensor
 from typing import Optional, NamedTuple, Callable
 from einops import rearrange
 from dataclasses import dataclass, field
+from abc import ABC
 import math
 
 from .attn_processor import AttnProcessor
 from .tome.tomesd.merge import bipartite_soft_matching_random2d
+from .tome.fbresearch.merge import kth_bipartite_soft_matching
 
 try:
     import natten
 except ImportError:
     natten = None
+
+class ToMeSpec(ABC): pass
+
+@dataclass
+class KthBiPartiteSoftMatching(ToMeSpec):
+    k: int = field(default=2)
+
+@dataclass
+class BiPartiteSoftMatchingRandom2D(ToMeSpec):
+    stride: int = field(default=2)
+    quotient_token_removal: float = field(default=.5)
+    make_generator: Callable[[], torch.Generator] = field(default=torch.Generator)
+    def __post_init__(self) -> None:
+        assert self.quotient_token_removal > 0 and self.quotient_token_removal < 1
+
+ToMeSpec.register(KthBiPartiteSoftMatching)
+ToMeSpec.register(BiPartiteSoftMatchingRandom2D)
 
 class Dimension(NamedTuple):
     height: int
@@ -29,9 +48,7 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
     kernel_size: int
     # tell me on construction what size to expect, so I can unflatten the sequence into height and width again
     expect_size: Dimension
-    stride: int
-    quotient_token_removal: float
-    make_generator: Callable[[], torch.Generator] = field(default=torch.Generator)
+    tome_spec: ToMeSpec
     has_fused_scale_factor: bool = False
     has_fused_qkv: bool = False
     # our key size (the kernel area) is smaller than the key size used in training (entire canvas),
@@ -57,12 +74,12 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
         #                log(max(inference_key_len, 2), max(train_key_len, 2))**.5
         self.train_key_len = self.expect_size.height * self.expect_size.width
         self.kernel_area = self.kernel_size**2
-        assert self.quotient_token_removal > 0 and self.quotient_token_removal < 1
 
     def __call__(
         self,
         attn: Attention,
         hidden_states: FloatTensor,
+        unnormed_hidden_states: Optional[FloatTensor],
         encoder_hidden_states: Optional[FloatTensor] = None,
         attention_mask: Optional[BoolTensor] = None,
         temb: Optional[FloatTensor] = None,
@@ -70,6 +87,25 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
         assert hidden_states.ndim == 3, f"Expected a disappointing 3D tensor that I would have the fun job of unflattening. Instead received {hidden_states.ndim}-dimensional tensor."
         assert hidden_states.size(-2) == self.expect_size.height * self.expect_size.width, "Sequence dimension is not equal to the product of expected height and width, so we cannot unflatten sequence into 2D sequence."
         
+        match self.tome_spec:
+            case KthBiPartiteSoftMatching(k):
+                merge, _ = kth_bipartite_soft_matching(unnormed_hidden_states, k=2)
+            case BiPartiteSoftMatchingRandom2D(stride, quotient_token_removal, make_generator):
+                seq_len: int = hidden_states.size(-2)
+                tokens_removed = int(seq_len * quotient_token_removal)
+                generator=make_generator()
+                merge, _ = bipartite_soft_matching_random2d(
+                    unnormed_hidden_states,
+                    w=self.expect_size.width,
+                    h=self.expect_size.height,
+                    sx=stride,
+                    sy=stride,
+                    r=tokens_removed,
+                    generator=generator,
+                    )
+            case _:
+                raise ValueError(f'Unsupported tome_spec: {self.tome_spec}')
+
         residual = hidden_states
 
         if attn.spatial_norm is not None:
@@ -87,6 +123,7 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
         if self.has_fused_qkv:
             assert hasattr(attn, 'qkv'), "Did not find property qkv on attn. Expected you to fuse its q_proj, k_proj, v_proj weights and biases beforehand, and multiply attn.scale into the q weights and bias."
             qkv = attn.qkv(hidden_states)
+            k_sub, v_sub = [merge(p) for p in (k, v)]
             # assumes MHA (as opposed to GQA)
             # assumes that the scale factor has already been fused into the weights
             q, k, v = rearrange(qkv, "n (h w) (t nh e) -> t n nh h w e", t=3, nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width)
@@ -94,37 +131,9 @@ class SelfToMeSelfAttnProcessor(AttnProcessor):
             q = attn.to_q(hidden_states)
             k = attn.to_k(hidden_states)
             v = attn.to_v(hidden_states)
+            k_sub, v_sub = [merge(p) for p in (k, v)]
             q, k, v = [rearrange(p, "n (h w) (nh e) -> n nh h w e", nh=attn.heads, h=self.expect_size.height, w=self.expect_size.width) for p in (q, k, v)]
-
-        seq_len: int = k.size(-2)*k.size(-3)
-        tokens_removed = int(seq_len * self.quotient_token_removal)
-
-        k_flat = rearrange(k, 'n nh h w e -> (n nh) (h w) e')
-        v_flat = rearrange(v, 'n nh h w e -> (n nh) (h w) e')
-        # TODO: can we use the same merger on both k and v?
-        #       it seems to use the passed-in tensor as a metric for computing cosine similarity, so maybe not?
-        # TODO: can we create the merger on construction, knowing only the expected shape of k or v, and not the data?
-        #       again, probably not, because it seems to rely on the data within the passed-in tensor
-        merge_k, _ = bipartite_soft_matching_random2d(
-            k_flat,
-            w=k.size(-2),
-            h=k.size(-3),
-            sx=self.stride,
-            sy=self.stride,
-            r=tokens_removed,
-            generator=self.make_generator(),
-            )
-        merge_v, _ = bipartite_soft_matching_random2d(
-            v_flat,
-            w=v.size(-2),
-            h=v.size(-3),
-            sx=self.stride,
-            sy=self.stride,
-            r=tokens_removed,
-            generator=self.make_generator(),
-            )
-        k_sub = merge_k(k_flat).unflatten(0, (-1, attn.heads))
-        v_sub = merge_v(v_flat).unflatten(0, (-1, attn.heads))
+        k_sub, v_sub = [rearrange(p, "n s (nh e) -> n nh s e", nh=attn.heads) for p in (k_sub, v_sub)]
 
         if self.scale_attn_entropy or not self.has_fused_scale_factor:
             scale = 1. if self.has_fused_scale_factor else attn.scale
