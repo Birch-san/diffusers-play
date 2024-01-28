@@ -39,8 +39,6 @@ class TransformerBlockUnNorm(Module):
             attention_mask=attention_mask,
             **cross_attention_kwargs,
         )
-        if 'unnormed_hidden_states' in cross_attention_kwargs:
-            del cross_attention_kwargs["unnormed_hidden_states"]
         if self.delegate.use_ada_layer_norm_zero:
             attn_output = gate_msa.unsqueeze(1) * attn_output
         hidden_states = attn_output + hidden_states
